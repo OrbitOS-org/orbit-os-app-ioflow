@@ -99,6 +99,47 @@ func parseUartFlowControl(s string) orbitclient.UartFlowControl {
 	}
 }
 
+// uartConfigJSON matches orbit-os-dashboard REST (sdk.UartConfig): camelCase keys and string parity/stopBits/flowControl.
+// encoding/json on orbitclient.UartConfig would emit "Port", "Parity" as ints — the UI expects baudrate, parity, etc.
+type uartConfigJSON struct {
+	Port        string `json:"port"`
+	Baudrate    int    `json:"baudrate"`
+	DataBits    int    `json:"dataBits"`
+	Parity      string `json:"parity"`
+	StopBits    string `json:"stopBits"`
+	FlowControl string `json:"flowControl"`
+}
+
+func orbitUartConfigToJSON(cfg *orbitclient.UartConfig) uartConfigJSON {
+	out := uartConfigJSON{
+		Port:     cfg.Port,
+		Baudrate: cfg.Baudrate,
+		DataBits: cfg.DataBits,
+	}
+	switch cfg.Parity {
+	case orbitclient.UartParityEven:
+		out.Parity = "even"
+	case orbitclient.UartParityOdd:
+		out.Parity = "odd"
+	default:
+		out.Parity = "none"
+	}
+	if cfg.StopBits == orbitclient.UartStopBits2 {
+		out.StopBits = "2"
+	} else {
+		out.StopBits = "1"
+	}
+	switch cfg.FlowControl {
+	case orbitclient.UartFlowHardware:
+		out.FlowControl = "rtscts"
+	case orbitclient.UartFlowSoftware:
+		out.FlowControl = "xonxoff"
+	default:
+		out.FlowControl = "none"
+	}
+	return out
+}
+
 // HandleGpio serve GPIO, PWM, UART, I2C e SPI em /api/gpio/…
 func (h *APIHandler) HandleGpio(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -350,7 +391,7 @@ func (h *APIHandler) getUartConfig(w http.ResponseWriter, r *http.Request) {
 		handleGRPCError(w, err)
 		return
 	}
-	json.NewEncoder(w).Encode(cfg)
+	json.NewEncoder(w).Encode(orbitUartConfigToJSON(cfg))
 }
 
 func (h *APIHandler) writeUart(w http.ResponseWriter, r *http.Request) {
@@ -402,7 +443,8 @@ func (h *APIHandler) uartListen(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	flusher.Flush()
 	ctx := r.Context()
-	const maxChunkSize = 4096
+	// Match orbit-os-workspace-go/cmd/examples/uart (Listen(..., 256, ...)).
+	const maxChunkSize = 256
 	err := h.client.UartManager.Listen(ctx, port, maxChunkSize, func(data []byte) {
 		enc := base64.StdEncoding.EncodeToString(data)
 		payload, _ := json.Marshal(map[string]string{"data": enc})

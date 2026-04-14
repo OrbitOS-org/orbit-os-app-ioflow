@@ -202,6 +202,12 @@
                                         <option value="text" selected>Text</option>
                                         <option value="hex">Hex</option>
                                     </select>
+                                    <select id="uart-tx-line-ending" class="uart-select" style="min-width: 108px;" title="Text mode only: append bytes after the field. In Hex, use 0D 0A in the field itself.">
+                                        <option value="none" selected>None</option>
+                                        <option value="lf">LF</option>
+                                        <option value="cr">CR</option>
+                                        <option value="crlf">CRLF</option>
+                                    </select>
                                     <input type="text" id="uart-write-data" placeholder="Enter text to send..." class="form-control" style="flex:1; min-width: 120px;">
                                     <button class="btn btn-primary btn-sm" onclick="uartWrite()" style="white-space:nowrap;">
                                         <i class="fas fa-paper-plane"></i> Send

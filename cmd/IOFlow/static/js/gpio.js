@@ -605,7 +605,52 @@ function uartFormatConfigString(baudrate, dataBits, parity, stopBits, flowContro
 }
 
 let uartEventSource = null;
+/** Buffer bytes until a newline or a short idle (debounce) — avoids one RX log line per gRPC chunk. */
 let uartRxBuffer = [];
+let uartRxDebounceTimer = null;
+const UART_RX_DEBOUNCE_MS = 64;
+const UART_RX_MAX_BUFFER = 65536;
+/** Last plain-text command; used to hide one duplicate local-echo line on RX. */
+let uartLastTxEchoSuppress = null;
+
+/** Strip common CSI/OSC from the shell (e.g. \\x1b[?2004l bracketed paste) so ESC does not show as dots. */
+function uartStripAnsiForDisplay(s) {
+    if (!s || typeof s !== 'string') return '';
+    return s
+        .replace(/\x1b\[[0-9;?><]*[a-zA-Z~]/g, '')
+        .replace(/\x1b\][^\x07]*\x07/g, '')
+        .replace(/\x1b\][^\x1b]*\x1b\\/g, '');
+}
+
+function uartFormatRxTextForLog(bytes) {
+    const raw = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    let t = uartStripAnsiForDisplay(raw);
+    t = t.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
+    return t.trimEnd();
+}
+
+/** Echo-suppress comparison: UTF-8, no ANSI, no \\r/\\n. */
+function uartRxBytesToComparableCmd(bytes) {
+    const raw = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    const stripped = uartStripAnsiForDisplay(raw);
+    return stripped.replace(/\r/g, '').replace(/\n/g, '').trim();
+}
+
+/** Map \\r\\n and lone \\r to \\n before splitting lines (terminal-style). */
+function uartNormalizeNewlinesToLF(arr) {
+    const result = [];
+    for (let i = 0; i < arr.length; i++) {
+        if (arr[i] === 0x0d && i + 1 < arr.length && arr[i + 1] === 0x0a) {
+            result.push(0x0a);
+            i++;
+        } else if (arr[i] === 0x0d) {
+            result.push(0x0a);
+        } else {
+            result.push(arr[i]);
+        }
+    }
+    return result;
+}
 
 function uartEscapeForLog(s) {
     const div = document.createElement('div');
@@ -635,19 +680,34 @@ function uartAppendLog(dir, textOrBytes) {
     const mode = document.getElementById('uart-log-mode')?.value || 'text';
     let displayText;
     if (dir === 'RX' && textOrBytes instanceof Uint8Array) {
-        displayText = mode === 'hex' ? uartBytesToHex(textOrBytes) : Array.from(textOrBytes).map(c => (c >= 32 && c < 127) ? String.fromCharCode(c) : '.').join('');
+        if (mode !== 'hex' && uartLastTxEchoSuppress !== null) {
+            if (uartRxBytesToComparableCmd(textOrBytes) === uartLastTxEchoSuppress) {
+                uartLastTxEchoSuppress = null;
+                return;
+            }
+        }
+        if (mode === 'hex') {
+            displayText = uartBytesToHex(textOrBytes);
+        } else {
+            displayText = uartFormatRxTextForLog(textOrBytes);
+            if (displayText === '') return;
+        }
     } else {
         displayText = (typeof textOrBytes === 'string') ? textOrBytes : String(textOrBytes);
+        if (dir === 'RX' && uartLastTxEchoSuppress !== null) {
+            const a = displayText.replace(/\r/g, '').replace(/\n/g, '').trim();
+            if (a === uartLastTxEchoSuppress) {
+                uartLastTxEchoSuppress = null;
+                return;
+            }
+        }
     }
     const line = document.createElement('div');
     line.className = 'uart-log-line';
-    const label = document.createElement('span');
-    label.className = dir === 'TX' ? 'uart-log-tx' : 'uart-log-rx';
-    label.textContent = dir + ': ';
     const content = document.createElement('span');
+    content.className = dir === 'TX' ? 'uart-log-tx' : 'uart-log-rx';
     content.textContent = displayText || '[empty]';
     content.style.wordBreak = 'break-all';
-    line.appendChild(label);
     line.appendChild(content);
     log.appendChild(line);
     log.scrollTop = log.scrollHeight;
@@ -656,7 +716,18 @@ function uartAppendLog(dir, textOrBytes) {
 function uartUpdateTxPlaceholder() {
     const input = document.getElementById('uart-write-data');
     const mode = document.getElementById('uart-tx-mode')?.value || 'text';
+    const lineEnd = document.getElementById('uart-tx-line-ending');
     if (input) input.placeholder = mode === 'hex' ? '48 65 6C or 0x48656C...' : 'Enter text to send...';
+    if (lineEnd) lineEnd.disabled = mode === 'hex';
+}
+
+/** Extra bytes appended after the field in Text mode (none / LF / CR / CRLF). */
+function uartTxLineEndingSuffix() {
+    const v = document.getElementById('uart-tx-line-ending')?.value || 'none';
+    if (v === 'lf') return '\n';
+    if (v === 'cr') return '\r';
+    if (v === 'crlf') return '\r\n';
+    return '';
 }
 
 function uartStartListen(port) {
@@ -679,25 +750,23 @@ function uartStartListen(port) {
             }
         } catch (_) {}
     };
-    uartEventSource.onerror = () => { uartStopListen(); };
+    uartEventSource.onerror = () => {
+        console.warn('UART listen (SSE) ended or failed — check port open, gRPC, and permissions.');
+        uartStopListen();
+    };
 }
 
-/** Buffers RX bytes and appends complete lines (split by \n or \r\n) to the log */
-function uartFlushRxChunk(bytes) {
+/** Flush complete lines (LF); remainder stays in uartRxBuffer for debounce or next chunk. */
+function uartDrainRxCompleteLines() {
+    uartRxBuffer = uartNormalizeNewlinesToLF(uartRxBuffer);
     const LF = 0x0A;
-    const MAX_BUFFER = 65536;
-    uartRxBuffer = uartRxBuffer.concat(Array.from(bytes));
-    if (uartRxBuffer.length > MAX_BUFFER) {
-        uartAppendLog('RX', new Uint8Array(uartRxBuffer));
-        uartRxBuffer = [];
-        return;
-    }
     let start = 0;
     for (let i = 0; i < uartRxBuffer.length; i++) {
         if (uartRxBuffer[i] === LF) {
             let lineBytes = uartRxBuffer.slice(start, i);
-            while (lineBytes.length > 0 && (lineBytes[lineBytes.length - 1] === 0x0D || lineBytes[lineBytes.length - 1] === 0x0A))
+            while (lineBytes.length > 0 && (lineBytes[lineBytes.length - 1] === 0x0D || lineBytes[lineBytes.length - 1] === 0x0A)) {
                 lineBytes.pop();
+            }
             if (lineBytes.length > 0) {
                 uartAppendLog('RX', new Uint8Array(lineBytes));
             }
@@ -707,12 +776,56 @@ function uartFlushRxChunk(bytes) {
     uartRxBuffer = uartRxBuffer.slice(start);
 }
 
+function uartScheduleRxDebounceFlush() {
+    if (uartRxDebounceTimer) clearTimeout(uartRxDebounceTimer);
+    uartRxDebounceTimer = setTimeout(() => {
+        uartRxDebounceTimer = null;
+        if (uartRxBuffer.length > 0) {
+            uartAppendLog('RX', new Uint8Array(uartRxBuffer));
+            uartRxBuffer = [];
+        }
+    }, UART_RX_DEBOUNCE_MS);
+}
+
+function uartFlushRxChunk(bytes) {
+    if (bytes.length === 0) return;
+    uartRxBuffer = uartRxBuffer.concat(Array.from(bytes));
+    if (uartRxBuffer.length > UART_RX_MAX_BUFFER) {
+        if (uartRxDebounceTimer) {
+            clearTimeout(uartRxDebounceTimer);
+            uartRxDebounceTimer = null;
+        }
+        uartAppendLog('RX', new Uint8Array(uartRxBuffer));
+        uartRxBuffer = [];
+        return;
+    }
+    if (uartRxDebounceTimer) {
+        clearTimeout(uartRxDebounceTimer);
+        uartRxDebounceTimer = null;
+    }
+    uartDrainRxCompleteLines();
+    if (uartRxBuffer.length > 0) {
+        uartScheduleRxDebounceFlush();
+    }
+}
+
 function uartStopListen() {
+    uartLastTxEchoSuppress = null;
+    if (uartRxDebounceTimer) {
+        clearTimeout(uartRxDebounceTimer);
+        uartRxDebounceTimer = null;
+    }
+    if (uartRxBuffer.length > 0) {
+        uartDrainRxCompleteLines();
+        if (uartRxBuffer.length > 0) {
+            uartAppendLog('RX', new Uint8Array(uartRxBuffer));
+            uartRxBuffer = [];
+        }
+    }
     if (uartEventSource) {
         uartEventSource.close();
         uartEventSource = null;
     }
-    uartRxBuffer = [];
 }
 
 function uartExportLog() {
@@ -750,9 +863,17 @@ async function uartWrite() {
 
     const txMode = document.getElementById('uart-tx-mode')?.value || 'text';
     const input = document.getElementById('uart-write-data').value;
-    if (!input) {
-        showNotification(txMode === 'hex' ? 'Enter hex bytes (e.g. 48 65 6C)' : 'Enter text to send', 'error');
-        return;
+    if (txMode === 'hex') {
+        if (!input) {
+            showNotification('Enter hex bytes (e.g. 48 65 6C)', 'error');
+            return;
+        }
+    } else {
+        const suf = uartTxLineEndingSuffix();
+        if (!input && !suf) {
+            showNotification('Enter text to send or choose LF/CR/CRLF', 'error');
+            return;
+        }
     }
 
     let data, hex, logDisplay;
@@ -766,9 +887,17 @@ async function uartWrite() {
         hex = true;
         logDisplay = uartBytesToHex(bytes);
     } else {
-        data = input;
+        const suffix = uartTxLineEndingSuffix();
+        data = input + suffix;
         hex = false;
         logDisplay = input;
+    }
+
+    // Set echo-suppress before await: echo can arrive over SSE while fetch is still in flight.
+    if (txMode === 'hex') {
+        uartLastTxEchoSuppress = null;
+    } else {
+        uartLastTxEchoSuppress = input.trim();
     }
 
     try {
@@ -777,12 +906,16 @@ async function uartWrite() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ port, data, hex })
         });
-        if (!resp.ok) throw new Error(await resp.text());
+        if (!resp.ok) {
+            uartLastTxEchoSuppress = null;
+            throw new Error(await resp.text());
+        }
         const result = await resp.json();
         uartAppendLog('TX', logDisplay);
         showNotification(`Sent ${result.bytesWritten || 0} bytes`, 'success');
         document.getElementById('uart-write-data').value = '';
     } catch (e) {
+        uartLastTxEchoSuppress = null;
         showNotification(`Error: ${e.message}`, 'error');
     }
 }
@@ -918,12 +1051,12 @@ function i2cAppendLog(dir, text) {
     if (!log) return;
     const line = document.createElement('div');
     line.className = 'uart-log-line';
-    const label = document.createElement('span');
-    label.className = dir === 'TX' ? 'uart-log-tx' : (dir === 'RX' ? 'uart-log-rx' : '');
-    label.textContent = dir + ': ';
     const content = document.createElement('span');
+    if (dir === 'TX') content.className = 'uart-log-tx';
+    else if (dir === 'RX') content.className = 'uart-log-rx';
+    else content.className = 'peripheral-log-meta';
     content.textContent = text;
-    line.appendChild(label);
+    content.style.wordBreak = 'break-all';
     line.appendChild(content);
     log.appendChild(line);
     log.scrollTop = log.scrollHeight;
@@ -1098,12 +1231,12 @@ function spiAppendLog(dir, text) {
     if (!log) return;
     const line = document.createElement('div');
     line.className = 'uart-log-line';
-    const label = document.createElement('span');
-    label.className = dir === 'TX' ? 'uart-log-tx' : (dir === 'RX' ? 'uart-log-rx' : '');
-    label.textContent = dir + ': ';
     const content = document.createElement('span');
+    if (dir === 'TX') content.className = 'uart-log-tx';
+    else if (dir === 'RX') content.className = 'uart-log-rx';
+    else content.className = 'peripheral-log-meta';
     content.textContent = text;
-    line.appendChild(label);
+    content.style.wordBreak = 'break-all';
     line.appendChild(content);
     log.appendChild(line);
     log.scrollTop = log.scrollHeight;
@@ -1150,6 +1283,16 @@ document.addEventListener('DOMContentLoaded', () => {
     loadGpioPins();
     loadPwmPins();
     loadUartPorts();
+
+    const uartTxInput = document.getElementById('uart-write-data');
+    if (uartTxInput) {
+        uartTxInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                uartWrite();
+            }
+        });
+    }
 
     document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
