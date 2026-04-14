@@ -7,7 +7,7 @@ import (
 
 	orbitclient "github.com/OrbitOS-org/orbit-os-sdk-go/v26/client"
 	"google.golang.org/grpc"
-	orbitsettings "orbit-os-peripherals-go/internal/settingsdial"
+	orbitsettings "orbit-os-ioflow-go/internal/settingsdial"
 )
 
 // Bundle wraps the SDK client plus extra services on a second gRPC channel (same endpoint).

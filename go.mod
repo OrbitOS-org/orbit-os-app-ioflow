@@ -1,4 +1,4 @@
-module orbit-os-peripherals-go
+module orbit-os-ioflow-go
 
 go 1.25.4
 

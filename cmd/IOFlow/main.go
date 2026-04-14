@@ -16,9 +16,9 @@ import (
 	"github.com/OrbitOS-org/orbit-os-sdk-go/v26/logger"
 	"github.com/OrbitOS-org/orbit-os-sdk-go/v26/metadata"
 
-	"orbit-os-peripherals-go/cmd/certs"
-	"orbit-os-peripherals-go/internal/handlers"
-	"orbit-os-peripherals-go/internal/settingsclient"
+	"orbit-os-ioflow-go/cmd/certs"
+	"orbit-os-ioflow-go/internal/handlers"
+	"orbit-os-ioflow-go/internal/settingsclient"
 )
 
 const logTag = "main"

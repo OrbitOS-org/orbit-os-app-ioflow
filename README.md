@@ -1,4 +1,4 @@
-# orbit-os-peripherals
+# orbit-os-ioflow
 
 Go services and web apps for **Orbit OS** that talk to device peripherals over **gRPC** (Gravity / `system_server`), using the official **[orbit-os-sdk-go](https://github.com/OrbitOS-org/orbit-os-sdk-go)** client.
 
@@ -17,8 +17,8 @@ The main deliverable here is **IOFlow**: a browser UI and HTTP API to control an
 Clone with submodules:
 
 ```bash
-git clone --recurse-submodules <repo-url>
-cd orbit-os-peripherals
+git clone --recurse-submodules https://github.com/OrbitOS-org/orbit-os-ioflow.git
+cd orbit-os-ioflow
 ```
 
 If you already cloned without submodules:

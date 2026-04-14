@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"orbit-os-peripherals-go/internal/settingsclient"
+	"orbit-os-ioflow-go/internal/settingsclient"
 )
 
 type APIHandler struct {
