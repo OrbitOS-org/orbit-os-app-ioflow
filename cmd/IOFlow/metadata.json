@@ -4,5 +4,5 @@
   "version": "1.0.0",
   "description": "GPIO, PWM, UART, I2C and SPI in one place.",
   "entry_point": "ioflow",
-  "permissions": ["*"]
+  "permissions": ["I2CService/*", "SpiService/*", "PwmService/*", "UartService/*", "GpioService/*"]
 }
