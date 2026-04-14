@@ -3,8 +3,8 @@ package settingsclient
 import (
 	"context"
 
-	"orbit-os-sdk-go/api/common"
-	fwsvcv26 "orbit-os-sdk-go/api/firewall_service/v26"
+	"github.com/OrbitOS-org/orbit-os-sdk-go/v26/api/common"
+	fwsvcv26 "github.com/OrbitOS-org/orbit-os-sdk-go/v26/api/firewall_service/v26"
 	"google.golang.org/grpc"
 )
 

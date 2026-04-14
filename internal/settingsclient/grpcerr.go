@@ -3,7 +3,7 @@ package settingsclient
 import (
 	"fmt"
 
-	"orbit-os-sdk-go/api/common"
+	"github.com/OrbitOS-org/orbit-os-sdk-go/v26/api/common"
 )
 
 func rpcErr(info *common.ErrorInfo) error {

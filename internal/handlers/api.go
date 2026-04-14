@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	orbitclient "orbit-os-sdk-go/client"
+	orbitclient "github.com/OrbitOS-org/orbit-os-sdk-go/v26/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 

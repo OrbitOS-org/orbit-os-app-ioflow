@@ -10,12 +10,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
-	"orbit-os-sdk-go/logger"
-	"orbit-os-sdk-go/metadata"
+	"github.com/OrbitOS-org/orbit-os-sdk-go/v26/logger"
+	"github.com/OrbitOS-org/orbit-os-sdk-go/v26/metadata"
 
 	"orbit-os-peripherals-go/cmd/certs"
 	"orbit-os-peripherals-go/internal/handlers"
@@ -95,22 +94,17 @@ func main() {
 	listenAddr := net.JoinHostPort("127.0.0.1", *port)
 	logger.Infof(logTag, "HTTP listening on http://%s (portal /ioflow)", listenAddr)
 
-	httpPort, err := strconv.Atoi(*port)
-	if err != nil {
-		log.Fatalf("invalid -port %q: %v", *port, err)
-	}
-
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		log.Fatalf("listen %s: %v", listenAddr, err)
 	}
 
 	if grpcBundle.AppHubManager != nil {
-		regErr := grpcBundle.AppHubManager.RegisterLocalHTTP(httpPort, "/ioflow")
+		regErr := grpcBundle.AppHubManager.RegisterWebUI(listenAddr, "/ioflow")
 		if regErr != nil {
 			logger.Warnf(logTag, "AppHub RegisterService: %v (portal tile unavailable)", regErr)
 		} else {
-			logger.Infof(logTag, "AppHub: registered at /ioflow → 127.0.0.1:%d", httpPort)
+			logger.Infof(logTag, "AppHub: registered at /ioflow → %s", listenAddr)
 		}
 	}
 

@@ -1,6 +1,6 @@
 package handlers
 
-import orbitclient "orbit-os-sdk-go/client"
+import orbitclient "github.com/OrbitOS-org/orbit-os-sdk-go/v26/client"
 
 type gpioPinJSON struct {
 	Name       string `json:"name"`

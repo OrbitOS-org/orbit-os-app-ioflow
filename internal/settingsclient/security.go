@@ -3,8 +3,8 @@ package settingsclient
 import (
 	"context"
 
-	"orbit-os-sdk-go/api/common"
-	systemv26 "orbit-os-sdk-go/api/system_service/v26"
+	"github.com/OrbitOS-org/orbit-os-sdk-go/v26/api/common"
+	systemv26 "github.com/OrbitOS-org/orbit-os-sdk-go/v26/api/system_service/v26"
 	"google.golang.org/grpc"
 )
 

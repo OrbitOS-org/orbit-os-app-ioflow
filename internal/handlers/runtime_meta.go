@@ -1,6 +1,6 @@
 package handlers
 
-import "orbit-os-sdk-go/metadata"
+import "github.com/OrbitOS-org/orbit-os-sdk-go/v26/metadata"
 
 var RuntimeApp metadata.AppMetadata
 

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"orbit-os-sdk-go/api/common"
-	wifiv26 "orbit-os-sdk-go/api/wifi_service/v26"
+	"github.com/OrbitOS-org/orbit-os-sdk-go/v26/api/common"
+	wifiv26 "github.com/OrbitOS-org/orbit-os-sdk-go/v26/api/wifi_service/v26"
 	"google.golang.org/grpc"
 )
 

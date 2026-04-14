@@ -3,8 +3,8 @@ package settingsclient
 import (
 	"context"
 
-	"orbit-os-sdk-go/api/common"
-	sensorv26 "orbit-os-sdk-go/api/sensor_service/v26"
+	"github.com/OrbitOS-org/orbit-os-sdk-go/v26/api/common"
+	sensorv26 "github.com/OrbitOS-org/orbit-os-sdk-go/v26/api/sensor_service/v26"
 	"google.golang.org/grpc"
 )
 
