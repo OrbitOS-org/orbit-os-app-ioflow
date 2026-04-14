@@ -1,4 +1,4 @@
-// Peripherals: UI e API HTTP para GPIO, PWM, UART, I2C e SPI (manifest OrbitOS em metadata.json).
+// IOFlow: UI e API HTTP para GPIO, PWM, UART, I2C e SPI (manifest OrbitOS em metadata.json).
 package main
 
 import (
@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	apphubv26 "orbit-os-sdk-go/api/app_hub_service/v26"
 	"orbit-os-sdk-go/logger"
 	"orbit-os-sdk-go/metadata"
 
@@ -37,7 +36,7 @@ var staticFS embed.FS
 var appManifest = metadata.MustParseAppManifestJSON(metadataJSON)
 
 func main() {
-	port := flag.String("port", "8081", "HTTP listen port")
+	port := flag.String("port", "9000", "HTTP listen port")
 	host := flag.String("host", "192.168.5.131", "gRPC host (TCP)")
 	grpcPort := flag.Int("grpc-port", 6000, "gRPC port")
 	socketPath := flag.String("socket", "/run/gravity/ipc/system_server.sock", "system_server Unix socket path")
@@ -75,13 +74,6 @@ func main() {
 	webHandler := handlers.NewWebHandlerWithFS(templatesFS)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/login" {
-			http.NotFound(w, r)
-			return
-		}
-		http.Redirect(w, r, "/", http.StatusFound)
-	})
 
 	staticContent, err := fs.Sub(staticFS, "static")
 	if err != nil {
@@ -101,7 +93,7 @@ func main() {
 	mux.HandleFunc("/gpio", webHandler.HandleGpio)
 
 	listenAddr := net.JoinHostPort("127.0.0.1", *port)
-	logger.Infof(logTag, "HTTP listening on http://%s (portal /peripherals)", listenAddr)
+	logger.Infof(logTag, "HTTP listening on http://%s (portal /ioflow)", listenAddr)
 
 	httpPort, err := strconv.Atoi(*port)
 	if err != nil {
@@ -114,18 +106,11 @@ func main() {
 	}
 
 	if grpcBundle.AppHubManager != nil {
-		regErr := grpcBundle.AppHubManager.RegisterService(&apphubv26.RegisterServiceRequest{
-			Host:   "127.0.0.1",
-			Port:   int32(httpPort),
-			Routes: []*apphubv26.Route{{Path: "/peripherals"}},
-			Health: &apphubv26.HealthCheck{
-				Type: apphubv26.HealthCheckType_HEALTH_CHECK_TCP,
-			},
-		})
+		regErr := grpcBundle.AppHubManager.RegisterLocalHTTP(httpPort, "/ioflow")
 		if regErr != nil {
 			logger.Warnf(logTag, "AppHub RegisterService: %v (portal tile unavailable)", regErr)
 		} else {
-			logger.Infof(logTag, "AppHub: registered at /peripherals → 127.0.0.1:%d", httpPort)
+			logger.Infof(logTag, "AppHub: registered at /ioflow → 127.0.0.1:%d", httpPort)
 		}
 	}
 

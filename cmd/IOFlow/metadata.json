@@ -1,0 +1,8 @@
+{
+  "package_id": "org.orbit-os.ioflow",
+  "name": "IOFlow - Control and test your peripherals",
+  "version": "1.0.0",
+  "description": "GPIO, PWM, UART, I2C and SPI in one place.",
+  "entry_point": "ioflow",
+  "permissions": ["*"]
+}

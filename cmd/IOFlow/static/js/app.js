@@ -518,14 +518,15 @@ async function loadUpdateInfo() {
     }, 300);
 }
 
-// Security Info
+// Security Info (legacy dashboard helpers; unused by IOFlow UI)
 function loadSecurityInfo() {
-    // Load security information
     setTimeout(() => {
-        document.getElementById('firewall-status').textContent = 'Active';
-        document.getElementById('ssl-status').textContent = 'Enabled';
-        document.getElementById('last-scan').textContent = 'Never';
-        document.getElementById('failed-logins').textContent = '0';
+        const fw = document.getElementById('firewall-status');
+        const ssl = document.getElementById('ssl-status');
+        const scan = document.getElementById('last-scan');
+        if (fw) fw.textContent = 'Active';
+        if (ssl) ssl.textContent = 'Enabled';
+        if (scan) scan.textContent = 'Never';
     }, 300);
 }
 
@@ -559,10 +560,10 @@ function changePassword() {
     }
 }
 
-// Sidebar and Navigation Functions
+// Sidebar and Navigation Functions (legacy; no sidebar in IOFlow UI)
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
-    sidebar.classList.toggle('open');
+    if (sidebar) sidebar.classList.toggle('open');
 }
 
 function showSection(sectionId) {

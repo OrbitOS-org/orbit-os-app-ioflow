@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none" aria-hidden="true">
+  <title>IOFlow</title>
+  <defs>
+    <linearGradient id="mcuBody" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1c1c28"/>
+      <stop offset="100%" stop-color="#0c0c12"/>
+    </linearGradient>
+    <linearGradient id="mcuAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7c6cff"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+    <linearGradient id="mcuPin" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#9ca3c8"/>
+      <stop offset="100%" stop-color="#5c5c78"/>
+    </linearGradient>
+  </defs>
+  <!-- QFP-style pins (grouped per edge) -->
+  <g stroke="url(#mcuAccent)" stroke-opacity="0.35" stroke-width="0.5">
+    <g fill="url(#mcuPin)">
+      <!-- top -->
+      <rect x="34" y="22" width="7" height="10" rx="1"/>
+      <rect x="44" y="22" width="7" height="10" rx="1"/>
+      <rect x="54" y="22" width="7" height="10" rx="1"/>
+      <rect x="64" y="22" width="7" height="10" rx="1"/>
+      <rect x="74" y="22" width="7" height="10" rx="1"/>
+      <rect x="84" y="22" width="7" height="10" rx="1"/>
+      <!-- bottom -->
+      <rect x="34" y="96" width="7" height="10" rx="1"/>
+      <rect x="44" y="96" width="7" height="10" rx="1"/>
+      <rect x="54" y="96" width="7" height="10" rx="1"/>
+      <rect x="64" y="96" width="7" height="10" rx="1"/>
+      <rect x="74" y="96" width="7" height="10" rx="1"/>
+      <rect x="84" y="96" width="7" height="10" rx="1"/>
+      <!-- left -->
+      <rect x="22" y="34" width="10" height="7" rx="1"/>
+      <rect x="22" y="44" width="10" height="7" rx="1"/>
+      <rect x="22" y="54" width="10" height="7" rx="1"/>
+      <rect x="22" y="64" width="10" height="7" rx="1"/>
+      <rect x="22" y="74" width="10" height="7" rx="1"/>
+      <rect x="22" y="84" width="10" height="7" rx="1"/>
+      <!-- right -->
+      <rect x="96" y="34" width="10" height="7" rx="1"/>
+      <rect x="96" y="44" width="10" height="7" rx="1"/>
+      <rect x="96" y="54" width="10" height="7" rx="1"/>
+      <rect x="96" y="64" width="10" height="7" rx="1"/>
+      <rect x="96" y="74" width="10" height="7" rx="1"/>
+      <rect x="96" y="84" width="10" height="7" rx="1"/>
+    </g>
+  </g>
+  <!-- Package body -->
+  <rect x="32" y="32" width="64" height="64" rx="6" fill="url(#mcuBody)" stroke="url(#mcuAccent)" stroke-width="2"/>
+  <!-- Pin-1 dot -->
+  <circle cx="42" cy="42" r="3" fill="url(#mcuAccent)" opacity="0.9"/>
+  <!-- Die / bond pad hint -->
+  <rect x="48" y="48" width="32" height="32" rx="3" fill="rgba(124,108,255,0.08)" stroke="url(#mcuAccent)" stroke-width="1" stroke-opacity="0.4"/>
+  <!-- Inner lines (address / data bus aesthetic) -->
+  <path d="M52 56h24M52 62h18M52 68h22M52 74h14" stroke="url(#mcuAccent)" stroke-width="1" stroke-opacity="0.25" stroke-linecap="round"/>
+</svg>

@@ -52,7 +52,7 @@ func (h *WebHandler) HandlePage(w http.ResponseWriter, r *http.Request, pageName
 		return
 	}
 
-	const title = "Peripherals"
+	const title = "IOFlow"
 	ver := RuntimeApp.Version
 	if ver == "" {
 		ver = "0.0.0"

@@ -70,29 +70,6 @@ function navigateTo(path) {
     window.location.href = path;
 }
 
-// Sidebar Functions
-function toggleSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebar-overlay');
-    if (sidebar) {
-        sidebar.classList.toggle('open');
-        if (overlay) {
-            overlay.classList.toggle('active', sidebar.classList.contains('open'));
-        }
-    }
-}
-
-function closeSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebar-overlay');
-    if (sidebar) {
-        sidebar.classList.remove('open');
-    }
-    if (overlay) {
-        overlay.classList.remove('active');
-    }
-}
-
 // Modal functions
 function closeModal(modalId) {
     const modal = document.getElementById(modalId);
@@ -187,19 +164,4 @@ document.addEventListener('DOMContentLoaded', () => {
         yearElement.textContent = new Date().getFullYear();
     }
 
-    // Close sidebar on nav click (mobile)
-    document.querySelectorAll('.nav-item').forEach(item => {
-        item.addEventListener('click', () => {
-            if (window.innerWidth <= 768) {
-                closeSidebar();
-            }
-        });
-    });
-
-    // Close sidebar on window resize to desktop
-    window.addEventListener('resize', () => {
-        if (window.innerWidth > 768) {
-            closeSidebar();
-        }
-    });
 });

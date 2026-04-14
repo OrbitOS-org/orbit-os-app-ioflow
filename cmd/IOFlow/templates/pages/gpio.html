@@ -1,38 +1,47 @@
 {{define "content"}}
-<div class="page-header">
-    <h1><i class="fas fa-microchip"></i> Peripherals</h1>
-    <p>GPIO, PWM, UART, I2C and SPI</p>
+<div class="page-header page-header--hero">
+    <div class="page-header-visual">
+        <img src="/static/logo8.png" alt="OrbitOS" class="page-hero-logo8" width="140" height="auto" decoding="async"/>
+    </div>
+    <div class="page-header-text">
+        <h1 class="page-title-with-icon">
+            <img src="/static/ioflow-icon.svg" alt="" class="page-title-icon" width="44" height="44" decoding="async" aria-hidden="true"/>
+            <span>IOFlow</span>
+        </h1>
+        <p class="page-lead">GPIO, PWM, UART, I2C and SPI in one place.</p>
+    </div>
 </div>
 
 <div class="tabs-container">
     <div class="tabs-header">
-        <button class="tab-button active" onclick="switchTab('peripherals', 'gpio', this)">
+        <button class="tab-button active" onclick="switchTab('ioflow', 'gpio', this)">
             <i class="fas fa-plug"></i> GPIO
         </button>
-        <button class="tab-button" onclick="switchTab('peripherals', 'pwm', this)">
+        <button class="tab-button" onclick="switchTab('ioflow', 'pwm', this)">
             <i class="fas fa-wave-square"></i> PWM
         </button>
-        <button class="tab-button" onclick="switchTab('peripherals', 'uart', this)">
+        <button class="tab-button" onclick="switchTab('ioflow', 'uart', this)">
             <i class="fas fa-exchange-alt"></i> UART
         </button>
-        <button class="tab-button" onclick="switchTab('peripherals', 'i2c', this)">
+        <button class="tab-button" onclick="switchTab('ioflow', 'i2c', this)">
             <i class="fas fa-project-diagram"></i> I2C
         </button>
-        <button class="tab-button" onclick="switchTab('peripherals', 'spi', this)">
+        <button class="tab-button" onclick="switchTab('ioflow', 'spi', this)">
             <i class="fas fa-stream"></i> SPI
         </button>
     </div>
 
     <div class="tabs-content">
         <!-- Tab GPIO -->
-        <div id="tab-peripherals-gpio" class="tab-pane active">
+        <div id="tab-ioflow-gpio" class="tab-pane active">
             <section class="card">
                 <div class="card-header">
                     <h2><i class="fas fa-plug"></i> GPIO Pins</h2>
                 </div>
                 <div class="card-body">
-                    <p class="gpio-table-meta" style="margin: 0 0 var(--spacing-md); font-size: 0.85rem; color: var(--text-muted);">
-                        <i class="fas fa-sync-alt"></i> Table refreshes every second. Use toggles to change direction or level.
+                    <p class="gpio-table-meta">
+                        <i class="fas fa-sync-alt" aria-hidden="true"></i>
+                        Table refreshes every second. Use toggles to change direction or level.
                     </p>
                     <div class="table-wrap" style="overflow-x: auto;">
                         <table class="gpio-pins-table" id="gpio-pins-table">
@@ -53,7 +62,7 @@
         </div>
 
         <!-- Tab PWM -->
-        <div id="tab-peripherals-pwm" class="tab-pane">
+        <div id="tab-ioflow-pwm" class="tab-pane">
             <section class="card">
                 <div class="card-header">
                     <h2><i class="fas fa-wave-square"></i> PWM Pins</h2>
@@ -110,7 +119,7 @@
         </div>
 
         <!-- Tab UART -->
-        <div id="tab-peripherals-uart" class="tab-pane">
+        <div id="tab-ioflow-uart" class="tab-pane">
             <section class="card">
                 <div class="card-header">
                     <h2><i class="fas fa-exchange-alt"></i> UART Serial Ports</h2>
@@ -225,7 +234,7 @@
         </div>
 
         <!-- Tab I2C -->
-        <div id="tab-peripherals-i2c" class="tab-pane">
+        <div id="tab-ioflow-i2c" class="tab-pane">
             <section class="card">
                 <div class="card-header">
                     <h2><i class="fas fa-project-diagram"></i> I2C Buses</h2>
@@ -312,7 +321,7 @@
         </div>
 
         <!-- Tab SPI -->
-        <div id="tab-peripherals-spi" class="tab-pane">
+        <div id="tab-ioflow-spi" class="tab-pane">
             <section class="card">
                 <div class="card-header">
                     <h2><i class="fas fa-stream"></i> SPI Devices</h2>

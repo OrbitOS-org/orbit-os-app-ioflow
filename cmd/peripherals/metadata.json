@@ -1,8 +1,0 @@
-{
-  "package_id": "org.orbit-os.peripherals",
-  "name": "Peripherals",
-  "version": "0.1.0",
-  "description": "OrbitOS GPIO, PWM, UART, I2C and SPI",
-  "entry_point": "peripherals",
-  "permissions": ["*"]
-}

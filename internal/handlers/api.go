@@ -173,12 +173,20 @@ func (h *APIHandler) getGpioLevel(w http.ResponseWriter, r *http.Request) {
 	var pinChip int32
 	fmt.Sscan(r.URL.Query().Get("chip"), &pinChip)
 	pin := &orbitclient.GpioPin{Name: pinName, Number: pinNumber, ChipNumber: pinChip}
-	state, err := h.client.GpioManager.GetLevel(pin)
+	level, err := h.client.GpioManager.GetLevel(pin)
 	if err != nil {
 		handleGRPCError(w, err)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]int32{"level": int32(state)})
+	dir, err := h.client.GpioManager.GetDirection(pin)
+	if err != nil {
+		handleGRPCError(w, err)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]int32{
+		"level":     int32(level),
+		"direction": int32(dir),
+	})
 }
 
 func (h *APIHandler) setGpioLevel(w http.ResponseWriter, r *http.Request) {

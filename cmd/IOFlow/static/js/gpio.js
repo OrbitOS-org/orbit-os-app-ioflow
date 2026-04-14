@@ -45,7 +45,7 @@ function getDirectionName(dir) {
     }
 }
 
-// ===== Peripherals Tabs =====
+// ===== IOFlow tabs =====
 
 function switchTab(section, tabName, buttonElement) {
     const tabPanes = document.querySelectorAll('.tabs-content .tab-pane');
@@ -58,7 +58,7 @@ function switchTab(section, tabName, buttonElement) {
     tabButtons.forEach(btn => btn.classList.remove('active'));
     if (buttonElement) buttonElement.classList.add('active');
 
-    if (section === 'peripherals') {
+    if (section === 'ioflow') {
         if (tabName === 'gpio') {
             startGpioTablePolling();
             refreshGpioTableStates();
@@ -66,13 +66,13 @@ function switchTab(section, tabName, buttonElement) {
             stopGpioTablePolling();
         }
     }
-    if (section === 'peripherals' && tabName === 'uart') {
+    if (section === 'ioflow' && tabName === 'uart') {
         loadUartPorts();
     }
-    if (section === 'peripherals' && tabName === 'i2c') {
+    if (section === 'ioflow' && tabName === 'i2c') {
         loadI2CBuses();
     }
-    if (section === 'peripherals' && tabName === 'spi') {
+    if (section === 'ioflow' && tabName === 'spi') {
         loadSpiDevices();
     }
 }
@@ -80,7 +80,7 @@ function switchTab(section, tabName, buttonElement) {
 // ===== GPIO Pins (table + 1s refresh) =====
 
 function isGpioTabActive() {
-    const tab = document.getElementById('tab-peripherals-gpio');
+    const tab = document.getElementById('tab-ioflow-gpio');
     return tab && tab.classList.contains('active');
 }
 
