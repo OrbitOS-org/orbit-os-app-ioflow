@@ -1,0 +1,33 @@
+# Package build staging (ORBs go to packages/*.orb)
+/packages/build/
+*.orb
+
+# Binaries
+/bin/
+/dist/
+/client
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Tests / coverage
+*.test
+*.out
+coverage.*
+
+# Go module
+vendor/
+
+# Client TLS material (do not commit keys; add ca.crt for dev if needed)
+certs/grpc/*.key
+certs/grpc/client.crt
+cmd/certs/grpc/*.key
+packages/certs/grpc/*.key
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store

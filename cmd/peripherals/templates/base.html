@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OrbitOS - {{.Title}}</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <a href="/" class="sidebar-brand" aria-label="OrbitOS Peripherals">
+                <span class="sidebar-brand-text" style="font-weight: 600; font-size: 1.1rem;">OrbitOS</span>
+            </a>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/" class="nav-item {{if eq .Page "gpio"}}active{{end}}">
+                <i class="fas fa-microchip"></i>
+                <span>Peripherals</span>
+            </a>
+        </nav>
+    </aside>
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+    <div class="main-wrapper">
+        <header class="main-header">
+            <button class="menu-toggle" onclick="toggleSidebar()">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div class="header-title">
+                <h1>{{.PageTitle}}</h1>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-icon" onclick="refreshCurrentPage()" title="Refresh">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="container">
+                {{block "content" .}}{{end}}
+            </div>
+        </main>
+
+        <footer class="main-footer">
+            <div class="footer-container">
+                <p>&copy; <span id="current-year"></span> OrbitOS. All rights reserved.</p>
+                <span class="footer-version">v{{.Version}}</span>
+            </div>
+        </footer>
+    </div>
+
+    <script src="/static/js/core.js"></script>
+    {{if .LoadLogViewer}}<script src="/static/js/logViewer.js"></script>{{end}}
+    <script src="/static/js/{{.ScriptFile}}.js"></script>
+</body>
+</html>
