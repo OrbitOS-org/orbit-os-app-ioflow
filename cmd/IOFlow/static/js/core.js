@@ -1,5 +1,16 @@
 // Core functionality and utilities
-const API_BASE = '/api';
+//
+// When IOFlow is opened via AppHub at /ioflow, the API is proxied at /ioflow/api (not /api at site root).
+// Absolute paths like /api/... would hit the portal and return HTML — breaking fetch and SSE (EventSource).
+function ioFlowApiBase() {
+    const p = window.location.pathname || '';
+    if (p === '/ioflow' || p.startsWith('/ioflow/')) {
+        return '/ioflow/api';
+    }
+    return '/api';
+}
+// var so other scripts (gpio, etc.) see the same base when loaded after core.js.
+var API_BASE = ioFlowApiBase();
 
 // Utility functions
 async function apiCall(endpoint, method = 'GET', body = null) {

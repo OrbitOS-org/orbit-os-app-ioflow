@@ -208,7 +208,7 @@ async function onGpioTableDirChange(el) {
     const label = row && row.querySelector('.gpio-dir-label');
     if (label) label.textContent = el.checked ? 'Output' : 'Input';
     try {
-        const resp = await fetch('/api/gpio/direction', {
+        const resp = await fetch(`${API_BASE}/gpio/direction`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -247,7 +247,7 @@ async function onGpioTableLevelChange(el) {
         }
     }
     try {
-        const resp = await fetch('/api/gpio/level', {
+        const resp = await fetch(`${API_BASE}/gpio/level`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -358,7 +358,7 @@ async function setSelectedPwm() {
     if (isNaN(dutyPct) || isNaN(frequencyHz)) { showNotification('Fill in duty cycle and frequency', 'error'); return; }
 
     try {
-        const resp = await fetch('/api/gpio/pwm', {
+        const resp = await fetch(`${API_BASE}/gpio/pwm`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ...pin, dutyCycle, frequencyHz })
@@ -389,7 +389,7 @@ async function onPwmToggleChanged(el) {
             return;
         }
         try {
-            const resp = await fetch('/api/gpio/pwm', {
+            const resp = await fetch(`${API_BASE}/gpio/pwm`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ...pin, dutyCycle, frequencyHz })
@@ -408,7 +408,7 @@ async function onPwmToggleChanged(el) {
     } else {
         // Disabling
         try {
-            const resp = await fetch('/api/gpio/pwm/disable', {
+            const resp = await fetch(`${API_BASE}/gpio/pwm/disable`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(pin)
@@ -496,21 +496,8 @@ async function onUartPortSelected() {
 
     if (configGrid) configGrid.style.display = 'flex';
 
-    try {
-        const cfg = await apiCall(`/gpio/uart/config?port=${encodeURIComponent(select.value)}`);
-        document.getElementById('uart-baudrate').value = cfg.baudrate || 115200;
-        document.getElementById('uart-data-bits').value = cfg.dataBits || 8;
-        document.getElementById('uart-parity').value = (cfg.parity || 'none').toLowerCase();
-        document.getElementById('uart-stop-bits').value = cfg.stopBits || '1';
-        document.getElementById('uart-flow').value = (cfg.flowControl || 'none').toLowerCase();
-    } catch (e) {
-        // Port not open or error — use defaults
-        document.getElementById('uart-baudrate').value = 115200;
-        document.getElementById('uart-data-bits').value = 8;
-        document.getElementById('uart-parity').value = 'none';
-        document.getElementById('uart-stop-bits').value = '1';
-        document.getElementById('uart-flow').value = 'none';
-    }
+    // Match SDK uart example (uart/main.go): GetConfig is only valid after Open — do not call the API here.
+    uartResetFormDefaults();
     // Always default to Closed — user must explicitly open
     if (toggle) { toggle.checked = false; }
     if (label) { label.textContent = 'Closed'; }
@@ -535,7 +522,7 @@ async function onUartToggleChanged(el) {
         const flowControl = document.getElementById('uart-flow').value;
 
         try {
-            const resp = await fetch('/api/gpio/uart/open', {
+            const resp = await fetch(`${API_BASE}/gpio/uart/open`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ port, baudrate, dataBits, parity, stopBits, flowControl })
@@ -543,8 +530,9 @@ async function onUartToggleChanged(el) {
             if (!resp.ok) throw new Error(await resp.text());
             const data = await resp.json();
             if (!data.success) throw new Error('Open failed');
-            const cfgStr = uartFormatConfigString(baudrate, dataBits, parity, stopBits, flowControl);
-            label.textContent = `Open (${cfgStr})`;
+            // Same order as uart/main.go: Open → GetConfig → Listen
+            await uartRefreshConfigFromServer(port);
+            label.textContent = uartOpenStatusLabelFromForm(port);
             icon.style.color = 'var(--success)';
             const ioSection = document.getElementById('uart-io-section');
             if (ioSection) ioSection.style.display = 'block';
@@ -560,7 +548,7 @@ async function onUartToggleChanged(el) {
         }
     } else {
         try {
-            const resp = await fetch('/api/gpio/uart/close', {
+            const resp = await fetch(`${API_BASE}/gpio/uart/close`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ port })
@@ -578,7 +566,7 @@ async function onUartToggleChanged(el) {
             showNotification(`${port} closed`, 'success');
         } catch (e) {
             el.checked = true;
-            label.textContent = 'Open';
+            label.textContent = uartOpenStatusLabelFromForm(port);
             icon.style.color = 'var(--success)';
             showNotification(`Error: ${e.message}`, 'error');
         }
@@ -594,6 +582,43 @@ function getSelectedUartPort() {
     return select.value;
 }
 
+function uartResetFormDefaults() {
+    const br = document.getElementById('uart-baudrate');
+    const db = document.getElementById('uart-data-bits');
+    const par = document.getElementById('uart-parity');
+    const sb = document.getElementById('uart-stop-bits');
+    const fl = document.getElementById('uart-flow');
+    if (br) br.value = 115200;
+    if (db) db.value = 8;
+    if (par) par.value = 'none';
+    if (sb) sb.value = '1';
+    if (fl) fl.value = 'none';
+}
+
+function uartApplyConfigToForm(cfg) {
+    if (!cfg) return;
+    const br = document.getElementById('uart-baudrate');
+    const db = document.getElementById('uart-data-bits');
+    const par = document.getElementById('uart-parity');
+    const sb = document.getElementById('uart-stop-bits');
+    const fl = document.getElementById('uart-flow');
+    if (br) br.value = cfg.baudrate || 115200;
+    if (db) db.value = cfg.dataBits || 8;
+    if (par) par.value = (cfg.parity || 'none').toLowerCase();
+    if (sb) sb.value = cfg.stopBits || '1';
+    if (fl) fl.value = (cfg.flowControl || 'none').toLowerCase();
+}
+
+/** After Open, sync form from device (GetConfig only works when the port is open). */
+async function uartRefreshConfigFromServer(port) {
+    try {
+        const cfg = await apiCall(`/gpio/uart/config?port=${encodeURIComponent(port)}`);
+        uartApplyConfigToForm(cfg);
+    } catch (e) {
+        console.warn('UART: GetConfig after open failed, keeping submitted values', e);
+    }
+}
+
 function uartFormatConfigString(baudrate, dataBits, parity, stopBits, flowControl) {
     const p = (parity || 'none').toLowerCase();
     const parLetter = p === 'even' ? 'E' : (p === 'odd' ? 'O' : 'N');
@@ -602,6 +627,21 @@ function uartFormatConfigString(baudrate, dataBits, parity, stopBits, flowContro
     if (flow === 'rtscts') return base + ', RTS/CTS';
     if (flow === 'xonxoff') return base + ', XON/XOFF';
     return base;
+}
+
+/** Status line next to the UART toggle: port + line settings (e.g. ttyAMA0, 115200, 8N1). */
+function uartOpenStatusLabel(port, baudrate, dataBits, parity, stopBits, flowControl) {
+    const cfgStr = uartFormatConfigString(baudrate, dataBits, parity, stopBits, flowControl);
+    return `Open (${port}, ${cfgStr})`;
+}
+
+function uartOpenStatusLabelFromForm(port) {
+    const baudrate = parseInt(document.getElementById('uart-baudrate').value) || 115200;
+    const dataBits = parseInt(document.getElementById('uart-data-bits').value) || 8;
+    const parity = document.getElementById('uart-parity').value;
+    const stopBits = document.getElementById('uart-stop-bits').value;
+    const flowControl = document.getElementById('uart-flow').value;
+    return uartOpenStatusLabel(port, baudrate, dataBits, parity, stopBits, flowControl);
 }
 
 let uartEventSource = null;
@@ -733,7 +773,7 @@ function uartTxLineEndingSuffix() {
 function uartStartListen(port) {
     uartStopListen();
     uartRxBuffer = [];
-    const url = `/api/gpio/uart/listen?port=${encodeURIComponent(port)}`;
+    const url = `${API_BASE}/gpio/uart/listen?port=${encodeURIComponent(port)}`;
     uartEventSource = new EventSource(url);
     uartEventSource.onmessage = (e) => {
         try {
@@ -901,7 +941,7 @@ async function uartWrite() {
     }
 
     try {
-        const resp = await fetch('/api/gpio/uart/write', {
+        const resp = await fetch(`${API_BASE}/gpio/uart/write`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ port, data, hex })
@@ -992,7 +1032,7 @@ async function i2cApplyConfig() {
     const tenBitAddr = document.getElementById('i2c-ten-bit').value === 'true';
     const clockStretching = document.getElementById('i2c-clock-stretch').value === 'true';
     try {
-        const resp = await fetch('/api/gpio/i2c/config', {
+        const resp = await fetch(`${API_BASE}/gpio/i2c/config`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ bus: parseInt(bus), clockHz, tenBitAddr, clockStretching })
@@ -1025,7 +1065,7 @@ async function i2cTransfer() {
     }
 
     try {
-        const resp = await fetch('/api/gpio/i2c/transfer', {
+        const resp = await fetch(`${API_BASE}/gpio/i2c/transfer`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1167,7 +1207,7 @@ async function postSpiConfigFromForm() {
     const lsbFirst = document.getElementById('spi-lsb-first').value === 'true';
     const mode = parseInt(document.getElementById('spi-mode').value, 10) || 0;
 
-    const resp = await fetch('/api/gpio/spi/config', {
+    const resp = await fetch(`${API_BASE}/gpio/spi/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1205,7 +1245,7 @@ async function spiTransfer() {
     try {
         await postSpiConfigFromForm();
 
-        const resp = await fetch('/api/gpio/spi/transfer', {
+        const resp = await fetch(`${API_BASE}/gpio/spi/transfer`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

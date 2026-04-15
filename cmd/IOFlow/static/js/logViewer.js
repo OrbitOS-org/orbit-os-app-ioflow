@@ -133,7 +133,8 @@ function connectSSE() {
     const app = document.getElementById('log-app-filter')?.value || '';
     const tag = document.getElementById('log-tag-filter')?.value || '';
 
-    let url = `/api/logs/stream?level=${level}`;
+    const base = (typeof API_BASE !== 'undefined' && API_BASE) ? API_BASE : '/api';
+    let url = `${base}/logs/stream?level=${level}`;
     if (app) url += `&app=${encodeURIComponent(app)}`;
     if (tag) url += `&tag=${encodeURIComponent(tag)}`;
 

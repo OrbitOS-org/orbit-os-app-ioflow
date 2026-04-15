@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -37,8 +38,7 @@ var appManifest = metadata.MustParseAppManifestJSON(metadataJSON)
 func main() {
 	port := flag.String("port", "9000", "HTTP listen port")
 	host := flag.String("host", "192.168.5.131", "gRPC host (TCP)")
-	grpcPort := flag.Int("grpc-port", 6000, "gRPC port")
-	socketPath := flag.String("socket", "/run/gravity/ipc/system_server.sock", "system_server Unix socket path")
+	grpcPort := flag.Int("grpc-port", 6000, "gRPC port (TCP fallback when UDS socket is absent)")
 	flag.Parse()
 
 	appMeta := metadata.Build(appManifest)
@@ -55,7 +55,6 @@ func main() {
 		grpcBundle, err = settingsclient.Connect(settingsclient.Options{
 			Host:       *host,
 			GRPCPort:   *grpcPort,
-			SocketPath: *socketPath,
 			CACert:     certs.CACert,
 			ClientCert: certs.ClientCert,
 			ClientKey:  certs.ClientKey,
@@ -91,8 +90,14 @@ func main() {
 	})
 	mux.HandleFunc("/gpio", webHandler.HandleGpio)
 
+	// Bind loopback only — not reachable as http://<device-ip>:port on the LAN; use the AppHub portal route.
 	listenAddr := net.JoinHostPort("127.0.0.1", *port)
-	logger.Infof(logTag, "HTTP listening on http://%s (portal /ioflow)", listenAddr)
+	logger.Infof(logTag, "HTTP listening on http://%s (via portal /ioflow; not exposed on 0.0.0.0)", listenAddr)
+
+	httpPort, err := strconv.Atoi(*port)
+	if err != nil {
+		log.Fatalf("invalid -port %q: %v", *port, err)
+	}
 
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
@@ -100,11 +105,11 @@ func main() {
 	}
 
 	if grpcBundle.AppHubManager != nil {
-		regErr := grpcBundle.AppHubManager.RegisterWebUI(listenAddr, "/ioflow")
+		regErr := grpcBundle.RegisterWebUI(net.JoinHostPort("127.0.0.1", *port), "/ioflow")
 		if regErr != nil {
-			logger.Warnf(logTag, "AppHub RegisterService: %v (portal tile unavailable)", regErr)
+			logger.Warnf(logTag, "AppHub RegisterWebUI: %v (portal tile unavailable)", regErr)
 		} else {
-			logger.Infof(logTag, "AppHub: registered at /ioflow → %s", listenAddr)
+			logger.Infof(logTag, "AppHub: registered at /ioflow → 127.0.0.1:%d", httpPort)
 		}
 	}
 
@@ -113,6 +118,10 @@ func main() {
 		signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 		<-ch
 		logger.Infof(logTag, "shutting down…")
+		if uerr := grpcBundle.UnregisterWebUI(); uerr != nil {
+			logger.Warnf(logTag, "AppHub UnregisterWebUI: %v", uerr)
+		}
+		_ = grpcBundle.Close()
 		_ = ln.Close()
 		os.Exit(0)
 	}()

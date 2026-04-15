@@ -10,6 +10,15 @@ import (
 	orbitsettings "orbit-os-ioflow-go/internal/settingsdial"
 )
 
+// gravitySystemServerSocket matches orbitclient.NewUDSClient / NewClientAuto (orbit-os-sdk-go/client.unixSocket).
+const gravitySystemServerSocket = "/run/gravity/ipc/system_server.sock"
+
+// Same check as SDK client.socketExists (not exported from the module).
+func gravitySystemServerSocketExists() bool {
+	_, err := os.Stat(gravitySystemServerSocket)
+	return err == nil
+}
+
 // Bundle wraps the SDK client plus extra services on a second gRPC channel (same endpoint).
 type Bundle struct {
 	*orbitclient.Client
@@ -30,14 +39,13 @@ type Bundle struct {
 type Options struct {
 	Host       string
 	GRPCPort   int
-	SocketPath string
 	CACert     []byte
 	ClientCert []byte
 	ClientKey  []byte
 }
 
-// Connect sets up the SDK (UDS if the socket exists; otherwise TCP + certs on a temp dir) and a second
-// gRPC client for services not exposed on orbitclient.Client.
+// Connect sets up the SDK the same way as client.NewClientAuto: UDS if gravitySystemServerSocket exists,
+// otherwise TCP+TLS to Host:GRPCPort. Also opens a second gRPC channel for services not on orbitclient.Client.
 func Connect(o Options) (*Bundle, error) {
 	ctx := context.Background()
 	bgCtx, cancel := context.WithCancel(context.Background())
@@ -46,23 +54,20 @@ func Connect(o Options) (*Bundle, error) {
 	var extrasConn *grpc.ClientConn
 	var tmpDir string
 
-	tryUDS := o.SocketPath != ""
-	if tryUDS {
-		if fi, err := os.Stat(o.SocketPath); err == nil && !fi.IsDir() {
-			var err error
-			sdk, err = orbitclient.NewUDSClient()
-			if err != nil {
-				cancel()
-				return nil, fmt.Errorf("UDS SDK: %w", err)
-			}
-			extrasConn, err = orbitsettings.DialUnix(ctx, o.SocketPath)
-			if err != nil {
-				_ = sdk.Close()
-				cancel()
-				return nil, fmt.Errorf("UDS extras: %w", err)
-			}
-			return finishBundle(sdk, extrasConn, "", cancel, bgCtx)
+	if gravitySystemServerSocketExists() {
+		var err error
+		sdk, err = orbitclient.NewUDSClient()
+		if err != nil {
+			cancel()
+			return nil, fmt.Errorf("UDS SDK: %w", err)
 		}
+		extrasConn, err = orbitsettings.DialUnix(ctx, gravitySystemServerSocket)
+		if err != nil {
+			_ = sdk.Close()
+			cancel()
+			return nil, fmt.Errorf("UDS extras: %w", err)
+		}
+		return finishBundle(sdk, extrasConn, "", cancel, bgCtx)
 	}
 
 	if len(o.CACert) == 0 {
@@ -131,6 +136,23 @@ func finishBundle(sdkClient *orbitclient.Client, extrasConn *grpc.ClientConn, tm
 // ApplyFirewall applies firewall rules (extra RPC).
 func (b *Bundle) ApplyFirewall() (bool, error) {
 	return b.firewallExtra.ApplyFirewall()
+}
+
+// RegisterWebUI registers this app's HTTP server with the AppHub portal.
+// It is equivalent to AppHubManager.RegisterWebUI; returns nil if AppHub is unavailable.
+func (b *Bundle) RegisterWebUI(addr, route string) error {
+	if b == nil || b.AppHubManager == nil {
+		return nil
+	}
+	return b.AppHubManager.RegisterWebUI(addr, route)
+}
+
+// UnregisterWebUI removes the AppHub registration (safe on shutdown). No-op if AppHub is unavailable.
+func (b *Bundle) UnregisterWebUI() error {
+	if b == nil || b.AppHubManager == nil {
+		return nil
+	}
+	return b.AppHubManager.UnregisterService()
 }
 
 // Close closes extras, removes temp certs, and closes the SDK client.

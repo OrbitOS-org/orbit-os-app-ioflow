@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -138,6 +139,38 @@ func orbitUartConfigToJSON(cfg *orbitclient.UartConfig) uartConfigJSON {
 		out.FlowControl = "none"
 	}
 	return out
+}
+
+// uartDefaultConfigJSON returns the same defaults as the web UI when the port is not open yet.
+func uartDefaultConfigJSON(port string) uartConfigJSON {
+	return uartConfigJSON{
+		Port:        port,
+		Baudrate:    115200,
+		DataBits:    8,
+		Parity:      "none",
+		StopBits:    "1",
+		FlowControl: "none",
+	}
+}
+
+// uartErrMeansPortNotOpen matches GetUartConfig when the device has not opened the port (expected on first select).
+func uartErrMeansPortNotOpen(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "not open") {
+		return true
+	}
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if st, ok := status.FromError(e); ok {
+			switch st.Code() {
+			case codes.FailedPrecondition, codes.NotFound:
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // HandleGpio serve GPIO, PWM, UART, I2C e SPI em /api/gpio/…
@@ -388,6 +421,10 @@ func (h *APIHandler) getUartConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg, err := h.client.UartManager.GetConfig(port)
 	if err != nil {
+		if uartErrMeansPortNotOpen(err) {
+			json.NewEncoder(w).Encode(uartDefaultConfigJSON(port))
+			return
+		}
 		handleGRPCError(w, err)
 		return
 	}
