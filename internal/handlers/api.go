@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 
 	orbitclient "github.com/OrbitOS-org/orbit-os-sdk-go/v26/client"
 	"google.golang.org/grpc/codes"
@@ -16,12 +17,28 @@ import (
 	"orbit-os-ioflow-go/internal/settingsclient"
 )
 
+type spiKey struct{ bus, cs uint32 }
+
 type APIHandler struct {
 	client *settingsclient.Bundle
+
+	uartMu    sync.Mutex
+	uartPorts map[string]*orbitclient.UartPort
+
+	i2cMu    sync.Mutex
+	i2cBuses map[uint32]*orbitclient.I2CBus
+
+	spiMu   sync.Mutex
+	spiDevs map[spiKey]*orbitclient.SpiDevice
 }
 
 func NewAPIHandler(c *settingsclient.Bundle) *APIHandler {
-	return &APIHandler{client: c}
+	return &APIHandler{
+		client:    c,
+		uartPorts: make(map[string]*orbitclient.UartPort),
+		i2cBuses:  make(map[uint32]*orbitclient.I2CBus),
+		spiDevs:   make(map[spiKey]*orbitclient.SpiDevice),
+	}
 }
 
 func handleGRPCError(w http.ResponseWriter, err error) {
@@ -391,10 +408,14 @@ func (h *APIHandler) openUart(w http.ResponseWriter, r *http.Request) {
 		StopBits:    parseUartStopBits(req.StopBits),
 		FlowControl: parseUartFlowControl(req.FlowControl),
 	}
-	if err := h.client.UartManager.Open(cfg); err != nil {
+	uartPort, err := h.client.UartManager.Open(cfg)
+	if err != nil {
 		handleGRPCError(w, err)
 		return
 	}
+	h.uartMu.Lock()
+	h.uartPorts[req.Port] = uartPort
+	h.uartMu.Unlock()
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
@@ -406,7 +427,17 @@ func (h *APIHandler) closeUart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := h.client.UartManager.Close(req.Port); err != nil {
+	h.uartMu.Lock()
+	uartPort, ok := h.uartPorts[req.Port]
+	if ok {
+		delete(h.uartPorts, req.Port)
+	}
+	h.uartMu.Unlock()
+	if !ok {
+		json.NewEncoder(w).Encode(map[string]bool{"success": true})
+		return
+	}
+	if err := uartPort.Close(); err != nil {
 		handleGRPCError(w, err)
 		return
 	}
@@ -419,7 +450,14 @@ func (h *APIHandler) getUartConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "port query parameter required", http.StatusBadRequest)
 		return
 	}
-	cfg, err := h.client.UartManager.GetConfig(port)
+	h.uartMu.Lock()
+	uartPort, ok := h.uartPorts[port]
+	h.uartMu.Unlock()
+	if !ok {
+		json.NewEncoder(w).Encode(uartDefaultConfigJSON(port))
+		return
+	}
+	cfg, err := uartPort.GetConfig()
 	if err != nil {
 		if uartErrMeansPortNotOpen(err) {
 			json.NewEncoder(w).Encode(uartDefaultConfigJSON(port))
@@ -455,7 +493,14 @@ func (h *APIHandler) writeUart(w http.ResponseWriter, r *http.Request) {
 	} else {
 		payload = []byte(req.Data)
 	}
-	written, err := h.client.UartManager.Write(req.Port, payload)
+	h.uartMu.Lock()
+	uartPort, ok := h.uartPorts[req.Port]
+	h.uartMu.Unlock()
+	if !ok {
+		http.Error(w, "port not open", http.StatusBadRequest)
+		return
+	}
+	written, err := uartPort.Write(payload)
 	if err != nil {
 		handleGRPCError(w, err)
 		return
@@ -480,9 +525,15 @@ func (h *APIHandler) uartListen(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	flusher.Flush()
 	ctx := r.Context()
-	// Match orbit-os-workspace-go/cmd/examples/uart (Listen(..., 256, ...)).
+	h.uartMu.Lock()
+	uartPort, ok := h.uartPorts[port]
+	h.uartMu.Unlock()
+	if !ok {
+		http.Error(w, "port not open", http.StatusBadRequest)
+		return
+	}
 	const maxChunkSize = 256
-	err := h.client.UartManager.Listen(ctx, port, maxChunkSize, func(data []byte) {
+	err := uartPort.Listen(ctx, maxChunkSize, func(data []byte) {
 		enc := base64.StdEncoding.EncodeToString(data)
 		payload, _ := json.Marshal(map[string]string{"data": enc})
 		if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
@@ -495,6 +546,23 @@ func (h *APIHandler) uartListen(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "data: %s\n\n", payload)
 		flusher.Flush()
 	}
+}
+
+func (h *APIHandler) getOrOpenI2CBus(bus uint32) (*orbitclient.I2CBus, error) {
+	h.i2cMu.Lock()
+	b, ok := h.i2cBuses[bus]
+	h.i2cMu.Unlock()
+	if ok {
+		return b, nil
+	}
+	b, err := h.client.I2CManager.Open(bus, 100000, false, false)
+	if err != nil {
+		return nil, err
+	}
+	h.i2cMu.Lock()
+	h.i2cBuses[bus] = b
+	h.i2cMu.Unlock()
+	return b, nil
 }
 
 func (h *APIHandler) listI2CBuses(w http.ResponseWriter, r *http.Request) {
@@ -517,7 +585,12 @@ func (h *APIHandler) scanI2CBus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid bus number", http.StatusBadRequest)
 		return
 	}
-	addrs, err := h.client.I2CManager.ScanBus(bus)
+	b, err := h.getOrOpenI2CBus(bus)
+	if err != nil {
+		handleGRPCError(w, err)
+		return
+	}
+	addrs, err := b.Scan()
 	if err != nil {
 		handleGRPCError(w, err)
 		return
@@ -536,7 +609,14 @@ func (h *APIHandler) getI2CConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid bus number", http.StatusBadRequest)
 		return
 	}
-	cfg, err := h.client.I2CManager.GetConfig(bus)
+	h.i2cMu.Lock()
+	b, ok := h.i2cBuses[bus]
+	h.i2cMu.Unlock()
+	if !ok {
+		http.Error(w, "bus not configured", http.StatusNotFound)
+		return
+	}
+	cfg, err := b.GetConfig()
 	if err != nil {
 		handleGRPCError(w, err)
 		return
@@ -555,16 +635,14 @@ func (h *APIHandler) setI2CConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	cfg := orbitclient.I2CConfig{
-		Bus:             req.Bus,
-		ClockHz:         req.ClockHz,
-		TenBitAddr:      req.TenBitAddr,
-		ClockStretching: req.ClockStretching,
-	}
-	if err := h.client.I2CManager.SetConfig(cfg); err != nil {
+	b, err := h.client.I2CManager.Open(req.Bus, req.ClockHz, req.TenBitAddr, req.ClockStretching)
+	if err != nil {
 		handleGRPCError(w, err)
 		return
 	}
+	h.i2cMu.Lock()
+	h.i2cBuses[req.Bus] = b
+	h.i2cMu.Unlock()
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
@@ -588,9 +666,12 @@ func (h *APIHandler) i2cTransfer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	dataOut, err := h.client.I2CManager.Transfer(orbitclient.I2CTransferRequest{
-		Bus: req.Bus, Address: req.Address, Data: data, ReadLength: req.ReadLength, Flags: 0,
-	})
+	bus, err := h.getOrOpenI2CBus(req.Bus)
+	if err != nil {
+		handleGRPCError(w, err)
+		return
+	}
+	dataOut, err := bus.Transfer(req.Address, data, req.ReadLength, 0)
 	if err != nil {
 		handleGRPCError(w, err)
 		return
@@ -629,6 +710,24 @@ func parseFlexibleHex(input string) ([]byte, error) {
 	return hex.DecodeString(s)
 }
 
+func (h *APIHandler) getOrOpenSpiDevice(bus, cs uint32) (*orbitclient.SpiDevice, error) {
+	key := spiKey{bus, cs}
+	h.spiMu.Lock()
+	d, ok := h.spiDevs[key]
+	h.spiMu.Unlock()
+	if ok {
+		return d, nil
+	}
+	d, err := h.client.SpiManager.Open(bus, cs, 1000000, 8, 0, false)
+	if err != nil {
+		return nil, err
+	}
+	h.spiMu.Lock()
+	h.spiDevs[key] = d
+	h.spiMu.Unlock()
+	return d, nil
+}
+
 func (h *APIHandler) listSpiDevices(w http.ResponseWriter, r *http.Request) {
 	devices, err := h.client.SpiManager.ListDevices()
 	if err != nil {
@@ -654,7 +753,14 @@ func (h *APIHandler) getSpiConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid chip select", http.StatusBadRequest)
 		return
 	}
-	cfg, err := h.client.SpiManager.GetConfig(bus, cs)
+	h.spiMu.Lock()
+	d, ok := h.spiDevs[spiKey{bus, cs}]
+	h.spiMu.Unlock()
+	if !ok {
+		http.Error(w, "device not configured", http.StatusNotFound)
+		return
+	}
+	cfg, err := d.GetConfig()
 	if err != nil {
 		handleGRPCError(w, err)
 		return
@@ -675,18 +781,14 @@ func (h *APIHandler) setSpiConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	cfg := orbitclient.SpiConfig{
-		Bus:         req.Bus,
-		ChipSelect:  req.ChipSelect,
-		MaxSpeedHz:  req.MaxSpeedHz,
-		BitsPerWord: req.BitsPerWord,
-		LSBFirst:    req.LsbFirst,
-		Mode:        int(req.Mode),
-	}
-	if err := h.client.SpiManager.SetConfig(cfg); err != nil {
+	d, err := h.client.SpiManager.Open(req.Bus, req.ChipSelect, req.MaxSpeedHz, req.BitsPerWord, int(req.Mode), req.LsbFirst)
+	if err != nil {
 		handleGRPCError(w, err)
 		return
 	}
+	h.spiMu.Lock()
+	h.spiDevs[spiKey{req.Bus, req.ChipSelect}] = d
+	h.spiMu.Unlock()
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
@@ -710,7 +812,12 @@ func (h *APIHandler) spiTransfer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	dataIn, err := h.client.SpiManager.Transfer(req.Bus, req.ChipSelect, dataOut, req.ReadLength)
+	d, err := h.getOrOpenSpiDevice(req.Bus, req.ChipSelect)
+	if err != nil {
+		handleGRPCError(w, err)
+		return
+	}
+	dataIn, err := d.Transfer(dataOut, req.ReadLength)
 	if err != nil {
 		handleGRPCError(w, err)
 		return
