@@ -219,7 +219,6 @@ async function onGpioTableDirChange(el) {
             }),
         });
         if (!resp.ok) throw new Error(await resp.text());
-        showNotification(`${pin.name} direction → ${direction}`, 'success');
     } catch (e) {
         el.checked = !el.checked;
         if (label) label.textContent = el.checked ? 'Output' : 'Input';
@@ -258,7 +257,6 @@ async function onGpioTableLevelChange(el) {
             }),
         });
         if (!resp.ok) throw new Error(await resp.text());
-        showNotification(`${pin.name} level → ${level}`, 'success');
     } catch (e) {
         el.checked = !el.checked;
         if (label) {
@@ -364,7 +362,6 @@ async function setSelectedPwm() {
             body: JSON.stringify({ ...pin, dutyCycle, frequencyHz })
         });
         if (!resp.ok) throw new Error(await resp.text());
-        showNotification(`PWM configured on ${pin.pinName}`, 'success');
         await onPwmPinSelected();
     } catch (e) {
         showNotification(`Error: ${e.message}`, 'error');
@@ -397,7 +394,6 @@ async function onPwmToggleChanged(el) {
             if (!resp.ok) throw new Error(await resp.text());
             label.textContent = 'Active';
             icon.style.color = 'var(--success)';
-            showNotification(`PWM enabled on ${pin.pinName}`, 'success');
             await onPwmPinSelected();
         } catch (e) {
             el.checked = false;
@@ -416,7 +412,6 @@ async function onPwmToggleChanged(el) {
             if (!resp.ok) throw new Error(await resp.text());
             label.textContent = 'Inactive';
             icon.style.color = 'var(--text-muted)';
-            showNotification(`PWM disabled on ${pin.pinName}`, 'success');
             await onPwmPinSelected();
         } catch (e) {
             el.checked = true;
@@ -539,7 +534,6 @@ async function onUartToggleChanged(el) {
             const configSection = document.getElementById('uart-config-section');
             if (configSection) configSection.style.display = 'none';
             uartStartListen(port);
-            showNotification(`${port} opened`, 'success');
         } catch (e) {
             el.checked = false;
             label.textContent = 'Closed';
@@ -563,7 +557,6 @@ async function onUartToggleChanged(el) {
             if (ioSection) ioSection.style.display = 'none';
             const configSection = document.getElementById('uart-config-section');
             if (configSection) configSection.style.display = '';
-            showNotification(`${port} closed`, 'success');
         } catch (e) {
             el.checked = true;
             label.textContent = uartOpenStatusLabelFromForm(port);
@@ -889,7 +882,6 @@ function uartExportLog() {
     a.download = fn;
     a.click();
     URL.revokeObjectURL(a.href);
-    showNotification('Log exported', 'success');
 }
 
 function uartClearLog() {
@@ -950,9 +942,8 @@ async function uartWrite() {
             uartLastTxEchoSuppress = null;
             throw new Error(await resp.text());
         }
-        const result = await resp.json();
+        await resp.json();
         uartAppendLog('TX', logDisplay);
-        showNotification(`Sent ${result.bytesWritten || 0} bytes`, 'success');
         document.getElementById('uart-write-data').value = '';
     } catch (e) {
         uartLastTxEchoSuppress = null;
@@ -1038,7 +1029,6 @@ async function i2cApplyConfig() {
             body: JSON.stringify({ bus: parseInt(bus), clockHz, tenBitAddr, clockStretching })
         });
         if (!resp.ok) throw new Error(await resp.text());
-        showNotification('I2C config applied', 'success');
     } catch (e) {
         showNotification(`Error: ${e.message}`, 'error');
     }
@@ -1079,7 +1069,6 @@ async function i2cTransfer() {
         const result = await resp.json();
         if (dataStr) i2cAppendLog('TX', dataStr);
         if (result.data) i2cAppendLog('RX', result.data); else if (readLen > 0 && !result.data) i2cAppendLog('RX', '(empty)');
-        showNotification('Transfer complete', 'success');
     } catch (e) {
         i2cAppendLog('ERR', e.message);
         showNotification(`Error: ${e.message}`, 'error');
@@ -1120,7 +1109,6 @@ function i2cExportLog() {
     a.download = fn;
     a.click();
     URL.revokeObjectURL(a.href);
-    showNotification('Log exported', 'success');
 }
 
 function i2cClearLog() {
@@ -1259,7 +1247,6 @@ async function spiTransfer() {
         const result = await resp.json();
         if (dataStr) spiAppendLog('TX', dataStr);
         if (result.data) spiAppendLog('RX', result.data);
-        showNotification('Transfer complete', 'success');
     } catch (e) {
         spiAppendLog('ERR', e.message);
         showNotification(`Error: ${e.message}`, 'error');
@@ -1300,7 +1287,6 @@ function spiExportLog() {
     a.download = fn;
     a.click();
     URL.revokeObjectURL(a.href);
-    showNotification('Log exported', 'success');
 }
 
 function spiClearLog() {

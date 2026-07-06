@@ -1,0 +1,13 @@
+{
+  "language": "go",
+  "appPath": "cmd/IOFlow",
+  "certsDir": "cmd/certs/grpc",
+  "packagesDir": ".orbit",
+  "orbitsignerPath": "",
+  "name": "IOFlow",
+  "sdkVersion": "v26.0.1",
+  "targetArch": [
+    "arm64",
+    "armv6"
+  ]
+}
