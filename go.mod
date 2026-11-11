@@ -3,7 +3,7 @@ module orbit-os-ioflow-go
 go 1.25.4
 
 require (
-	github.com/OrbitOS-org/orbit-os-sdk-go/v26 v26.0.0
+	github.com/OrbitOS-org/orbit-os-sdk-go/v26 v26.1.0
 	google.golang.org/grpc v1.77.0
 )
 

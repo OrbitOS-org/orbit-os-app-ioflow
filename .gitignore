@@ -1,11 +1,19 @@
-# Package build staging (ORBs go to packages/*.orb)
-/packages/build/
+# SDK: downloaded by Orbit Studio (Add / Update SDK), never committed
+/orbit-os-sdk-go/
+
+# Development TLS material: written by Orbit Studio when you add a device
+**/certs/grpc/*.crt
+**/certs/grpc/*.key
+
+# Packages built by Orbit Studio
+/.orbit/
+/packages/
 *.orb
 
 # Binaries
 /bin/
 /dist/
-/client
+/ioflow
 *.exe
 *.exe~
 *.dll
@@ -20,14 +28,9 @@ coverage.*
 # Go module
 vendor/
 
-# Client TLS material (do not commit keys; add ca.crt for dev if needed)
-certs/grpc/*.key
-certs/grpc/client.crt
-cmd/certs/grpc/*.key
-packages/certs/grpc/*.key
-
 # IDE / OS
 .idea/
 .vscode/
 *.swp
 .DS_Store
+orbit.project.local.json

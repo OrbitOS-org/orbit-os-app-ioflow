@@ -5,7 +5,7 @@
   "packagesDir": ".orbit",
   "orbitsignerPath": "",
   "name": "IOFlow",
-  "sdkVersion": "v26.0.1",
+  "sdkVersion": "v26.1.0",
   "targetArch": [
     "arm64",
     "armv6"
