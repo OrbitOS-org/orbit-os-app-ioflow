@@ -142,38 +142,65 @@ async function refreshGpioTableStates() {
     const tbody = document.getElementById('gpio-pins-tbody');
     if (!tbody || !gpioPinsList.length) return;
 
-    await Promise.all(gpioPinsList.map(async (pin, idx) => {
-        const chip = gpioPinChip(pin);
+    // One request for the whole table. Asking pin by pin meant a round trip (and two
+    // platform calls) per pin per second, and the browser only opens six at a time.
+    let states;
+    try {
+        const resp = await apiCall('/gpio/states');
+        states = resp.states || [];
+    } catch {
+        markGpioRowsInError(tbody);
+        return;
+    }
+
+    const byPin = new Map();
+    for (const state of states) {
+        byPin.set(`${state.chipNumber}:${state.number}`, state);
+    }
+
+    gpioPinsList.forEach((pin, idx) => {
         const row = tbody.querySelector(`tr[data-gpio-idx="${idx}"]`);
         if (!row) return;
-        try {
-            const state = await apiCall(
-                `/gpio/level?name=${encodeURIComponent(pin.name)}&number=${pin.number}&chip=${chip}`
-            );
-            const dirToggle = row.querySelector('input[data-gpio-field="dir"]');
-            const lvlToggle = row.querySelector('input[data-gpio-field="lvl"]');
-            const isOut = Number(state.direction) === GpioDirection.OUT;
-            const isHigh = Number(state.level) === GpioLevel.HIGH;
-            if (dirToggle) dirToggle.checked = isOut;
-            if (lvlToggle) lvlToggle.checked = isHigh;
-            const dirLab = row.querySelector('.gpio-dir-label');
-            const lvlLab = row.querySelector('.gpio-lvl-label');
-            if (dirLab) dirLab.textContent = isOut ? 'Output' : 'Input';
-            if (lvlLab) {
-                lvlLab.textContent = isHigh ? 'HIGH' : 'LOW';
-                if (isHigh) {
-                    lvlLab.style.color = 'var(--success)';
-                } else {
-                    lvlLab.style.color = '';
-                }
-            }
-        } catch {
-            const dirLab = row.querySelector('.gpio-dir-label');
-            const lvlLab = row.querySelector('.gpio-lvl-label');
+        const dirLab = row.querySelector('.gpio-dir-label');
+        const lvlLab = row.querySelector('.gpio-lvl-label');
+        const state = byPin.get(`${gpioPinChip(pin)}:${pin.number}`);
+
+        // A pin the device could not read comes back with an error and no values.
+        if (!state || state.level === undefined || state.direction === undefined) {
             if (dirLab) dirLab.textContent = 'Error';
-            if (lvlLab) lvlLab.textContent = 'Error';
+            if (lvlLab) {
+                lvlLab.textContent = 'Error';
+                lvlLab.style.color = '';
+            }
+            if (state && state.error) row.title = state.error;
+            return;
         }
-    }));
+        row.removeAttribute('title');
+
+        const isOut = Number(state.direction) === GpioDirection.OUT;
+        const isHigh = Number(state.level) === GpioLevel.HIGH;
+        const dirToggle = row.querySelector('input[data-gpio-field="dir"]');
+        const lvlToggle = row.querySelector('input[data-gpio-field="lvl"]');
+        if (dirToggle) dirToggle.checked = isOut;
+        if (lvlToggle) lvlToggle.checked = isHigh;
+        if (dirLab) dirLab.textContent = isOut ? 'Output' : 'Input';
+        if (lvlLab) {
+            lvlLab.textContent = isHigh ? 'HIGH' : 'LOW';
+            lvlLab.style.color = isHigh ? 'var(--success)' : '';
+        }
+    });
+}
+
+function markGpioRowsInError(tbody) {
+    for (const row of tbody.querySelectorAll('tr[data-gpio-idx]')) {
+        const dirLab = row.querySelector('.gpio-dir-label');
+        const lvlLab = row.querySelector('.gpio-lvl-label');
+        if (dirLab) dirLab.textContent = 'Error';
+        if (lvlLab) {
+            lvlLab.textContent = 'Error';
+            lvlLab.style.color = '';
+        }
+    }
 }
 
 async function loadGpioPins() {
@@ -641,10 +668,40 @@ let uartEventSource = null;
 /** Buffer bytes until a newline or a short idle (debounce) — avoids one RX log line per gRPC chunk. */
 let uartRxBuffer = [];
 let uartRxDebounceTimer = null;
+/** Oldest lines are dropped past this, so a long capture cannot fill the browser. */
+const LOG_MAX_LINES = 5000;
+
+/** How long after a write a matching line can still be the device echoing it back. */
+const UART_ECHO_WINDOW_MS = 300;
+
+function appendLogLine(log, line) {
+    log.appendChild(line);
+    while (log.childElementCount > LOG_MAX_LINES) {
+        log.removeChild(log.firstElementChild);
+    }
+    log.scrollTop = log.scrollHeight;
+}
+
 const UART_RX_DEBOUNCE_MS = 64;
 const UART_RX_MAX_BUFFER = 65536;
 /** Last plain-text command; used to hide one duplicate local-echo line on RX. */
 let uartLastTxEchoSuppress = null;
+let uartLastTxEchoAt = 0;
+
+/**
+ * True while a line that repeats what was just written can still be the device
+ * echoing it. Without the time limit the mark stayed armed for as long as it took,
+ * and a real answer identical to the last command disappeared from the log.
+ */
+function uartEchoSuppressionActive() {
+    if (uartLastTxEchoSuppress === null) return false;
+    if (Date.now() - uartLastTxEchoAt > UART_ECHO_WINDOW_MS) {
+        uartLastTxEchoSuppress = null;
+        return false;
+    }
+    const toggle = document.getElementById('uart-hide-echo');
+    return !toggle || toggle.checked;
+}
 
 /** Strip common CSI/OSC from the shell (e.g. \\x1b[?2004l bracketed paste) so ESC does not show as dots. */
 function uartStripAnsiForDisplay(s) {
@@ -713,7 +770,7 @@ function uartAppendLog(dir, textOrBytes) {
     const mode = document.getElementById('uart-log-mode')?.value || 'text';
     let displayText;
     if (dir === 'RX' && textOrBytes instanceof Uint8Array) {
-        if (mode !== 'hex' && uartLastTxEchoSuppress !== null) {
+        if (mode !== 'hex' && uartEchoSuppressionActive()) {
             if (uartRxBytesToComparableCmd(textOrBytes) === uartLastTxEchoSuppress) {
                 uartLastTxEchoSuppress = null;
                 return;
@@ -727,7 +784,7 @@ function uartAppendLog(dir, textOrBytes) {
         }
     } else {
         displayText = (typeof textOrBytes === 'string') ? textOrBytes : String(textOrBytes);
-        if (dir === 'RX' && uartLastTxEchoSuppress !== null) {
+        if (dir === 'RX' && uartEchoSuppressionActive()) {
             const a = displayText.replace(/\r/g, '').replace(/\n/g, '').trim();
             if (a === uartLastTxEchoSuppress) {
                 uartLastTxEchoSuppress = null;
@@ -742,8 +799,7 @@ function uartAppendLog(dir, textOrBytes) {
     content.textContent = displayText || '[empty]';
     content.style.wordBreak = 'break-all';
     line.appendChild(content);
-    log.appendChild(line);
-    log.scrollTop = log.scrollHeight;
+    appendLogLine(log, line);
 }
 
 function uartUpdateTxPlaceholder() {
@@ -930,6 +986,7 @@ async function uartWrite() {
         uartLastTxEchoSuppress = null;
     } else {
         uartLastTxEchoSuppress = input.trim();
+        uartLastTxEchoAt = Date.now();
     }
 
     try {
@@ -1087,8 +1144,7 @@ function i2cAppendLog(dir, text) {
     content.textContent = text;
     content.style.wordBreak = 'break-all';
     line.appendChild(content);
-    log.appendChild(line);
-    log.scrollTop = log.scrollHeight;
+    appendLogLine(log, line);
 }
 
 function i2cExportLog() {
@@ -1265,8 +1321,7 @@ function spiAppendLog(dir, text) {
     content.textContent = text;
     content.style.wordBreak = 'break-all';
     line.appendChild(content);
-    log.appendChild(line);
-    log.scrollTop = log.scrollHeight;
+    appendLogLine(log, line);
 }
 
 function spiExportLog() {

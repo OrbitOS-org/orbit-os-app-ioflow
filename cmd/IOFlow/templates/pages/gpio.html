@@ -224,6 +224,9 @@
                                     <option value="text" selected>Text</option>
                                     <option value="hex">Hex</option>
                                 </select>
+                                <label for="uart-hide-echo" style="display: flex; align-items: center; gap: 6px; margin: 0; font-size: 0.8rem; white-space: nowrap;" title="Drop a line that repeats what was just sent, when it comes straight back">
+                                    <input type="checkbox" id="uart-hide-echo" checked> Hide echo
+                                </label>
                                 <button class="btn btn-sm" onclick="uartExportLog()" title="Export log">
                                     <i class="fas fa-download"></i>
                                 </button>
