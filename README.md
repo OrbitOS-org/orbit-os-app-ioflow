@@ -34,10 +34,10 @@ Runs on Raspberry Pi, Arduino UNO Q and other ARM64 devices with Orbit OS (free 
 
 ## Install
 
-**From the Orbit OS Store (recommended):** install [IOFlow](https://store.orbit-os.org/app/ioflow?ref=github-ioflow)
+**From the Orbit OS Store (recommended):** install [IOFlow](https://store.orbit-os.org/app/orbit-os-ioflow?ref=github-ioflow)
 on your device in one click.
 
-<a href="https://store.orbit-os.org/app/ioflow?ref=github-ioflow"><img src="https://www.orbit-os.org/images/badges/get-it-on-orbit-os-store@3x.png" width="200" alt="Get it on Orbit OS Store"></a>
+<a href="https://store.orbit-os.org/app/orbit-os-ioflow?ref=github-ioflow"><img src="https://www.orbit-os.org/images/badges/get-it-on-orbit-os-store@3x.png" width="200" alt="Get it on Orbit OS Store"></a>
 
 **From source — recommended: [Orbit Studio](https://marketplace.visualstudio.com/items?itemName=orbit-os.orbit-studio) (VS Code):**
 
@@ -104,7 +104,7 @@ layout for Go apps:
 
 ## Links
 
-[App in the Store](https://store.orbit-os.org/app/ioflow?ref=github-ioflow) ·
+[App in the Store](https://store.orbit-os.org/app/orbit-os-ioflow?ref=github-ioflow) ·
 [Orbit OS](https://www.orbit-os.org/?ref=github-ioflow) ·
 [Getting started](https://www.orbit-os.org/getting_started.html?ref=github-ioflow) ·
 [SDK reference](https://www.orbit-os.org/api-reference.html?ref=github-ioflow) ·
