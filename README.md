@@ -88,6 +88,7 @@ layout for Go apps:
 - On the device the app reaches the platform through the local socket; `-host` and the certificates are only
   used when you run it on your computer.
 - Flags: `-port` (preferred web port, default 50090), `-host`, `-grpc-port`, `-certs`.
+- Tests: `go test ./...` (they need no device).
 
 ## Security
 
@@ -96,8 +97,8 @@ layout for Go apps:
 - The app takes a port in the reserved range 50000–60000 (starting at 50090) and moves to the next one when a
   port is taken or the Launcher refuses it. It opens no other port.
 - IOFlow stores nothing: what you see is read from the device when you ask for it. It needs no account.
-- Permissions used: `SystemService`, `AppHubService`, `GpioService`, `I2CService`, `PwmService`,
-  `SpiService`, `UartService`.
+- Permissions used: `AppHubService`, `GpioService`, `I2CService`, `PwmService`, `SpiService`,
+  `UartService` — the services the app actually calls, and no others.
 - Driving pins changes the state of real hardware. On a board you care about, check what is wired to a pin
   before you set it.
 
