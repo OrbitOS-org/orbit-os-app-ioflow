@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -41,6 +42,37 @@ func NewAPIHandler(c *settingsclient.Bundle) *APIHandler {
 	}
 }
 
+// Close releases what the app holds on the device. Only UART ports are real open
+// handles — an I2C bus or an SPI device is a configuration plus an address, with
+// nothing to give back — but all three maps are cleared so a later connection
+// starts from a clean state.
+func (h *APIHandler) Close() error {
+	h.uartMu.Lock()
+	ports := h.uartPorts
+	h.uartPorts = make(map[string]*orbitclient.UartPort)
+	h.uartMu.Unlock()
+
+	var firstErr error
+	for name, port := range ports {
+		if port == nil {
+			continue
+		}
+		if err := port.Close(); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("close %s: %w", name, err)
+		}
+	}
+
+	h.i2cMu.Lock()
+	h.i2cBuses = make(map[uint32]*orbitclient.I2CBus)
+	h.i2cMu.Unlock()
+
+	h.spiMu.Lock()
+	h.spiDevs = make(map[spiKey]*orbitclient.SpiDevice)
+	h.spiMu.Unlock()
+
+	return firstErr
+}
+
 func handleGRPCError(w http.ResponseWriter, err error) {
 	if err == nil {
 		return
@@ -70,21 +102,85 @@ func handleGRPCError(w http.ResponseWriter, err error) {
 	}
 }
 
-func parseGpioLevel(s string) orbitclient.GpioLevel {
-	switch strings.ToUpper(s) {
-	case "HIGH", "GPIO_LEVEL_HIGH":
-		return orbitclient.GPIO_LEVEL_HIGH
+// maxBodyBytes caps a JSON request body. Everything this API takes is small; the
+// limit is there so a runaway client cannot make the app eat the device's memory.
+const maxBodyBytes = 1 << 20 // 1 MiB
+
+// decodeJSONBody reads the request body into dst and answers 400 when it cannot.
+// It returns false when the caller should stop.
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return false
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
+// grpcMessage is the platform's message for an error, without the gRPC wrapping.
+func grpcMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	if st, ok := status.FromError(err); ok {
+		return st.Message()
+	}
+	return err.Error()
+}
+
+// queryInt32 reads a required integer query parameter.
+func queryInt32(r *http.Request, name string) (int32, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return 0, fmt.Errorf("%s query parameter required", name)
+	}
+	v, err := strconv.ParseInt(raw, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: %q", name, raw)
+	}
+	return int32(v), nil
+}
+
+// queryUint32 reads a required unsigned integer query parameter.
+func queryUint32(r *http.Request, name string) (uint32, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return 0, fmt.Errorf("%s query parameter required", name)
+	}
+	v, err := strconv.ParseUint(raw, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: %q", name, raw)
+	}
+	return uint32(v), nil
+}
+
+// parseGpioLevel rejects anything it does not know: a typo must not become a level.
+func parseGpioLevel(s string) (orbitclient.GpioLevel, error) {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "HIGH", "GPIO_LEVEL_HIGH", "1":
+		return orbitclient.GPIO_LEVEL_HIGH, nil
+	case "LOW", "GPIO_LEVEL_LOW", "0":
+		return orbitclient.GPIO_LEVEL_LOW, nil
 	default:
-		return orbitclient.GPIO_LEVEL_LOW
+		return 0, fmt.Errorf("invalid level %q: use HIGH or LOW", s)
 	}
 }
 
-func parseGpioDirection(s string) orbitclient.GpioDirection {
-	switch strings.ToUpper(s) {
-	case "IN", "GPIO_DIR_IN":
-		return orbitclient.GPIO_DIR_IN
+// parseGpioDirection rejects anything it does not know: a typo must not turn a pin
+// into an output and start driving whatever is wired to it.
+func parseGpioDirection(s string) (orbitclient.GpioDirection, error) {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "IN", "INPUT", "GPIO_DIR_IN":
+		return orbitclient.GPIO_DIR_IN, nil
+	case "OUT", "OUTPUT", "GPIO_DIR_OUT":
+		return orbitclient.GPIO_DIR_OUT, nil
 	default:
-		return orbitclient.GPIO_DIR_OUT
+		return 0, fmt.Errorf("invalid direction %q: use IN or OUT", s)
 	}
 }
 
@@ -193,10 +289,12 @@ func uartErrMeansPortNotOpen(err error) bool {
 // HandleGpio serves GPIO, PWM, UART, I2C and SPI under /api/gpio/.
 func (h *APIHandler) HandleGpio(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	path := strings.TrimPrefix(r.URL.Path, "/api/gpio/")
 	method := r.Method
 	switch {
+	case path == "states" && method == "GET":
+		h.listGpioStates(w, r)
 	case path == "pins" && method == "GET":
 		h.listGpioPins(w, r)
 	case path == "level" && method == "GET":
@@ -257,13 +355,52 @@ func (h *APIHandler) listGpioPins(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"pins": gpioPinsForAPI(pins)})
 }
 
+// listGpioStates reads every pin in one request. The page used to ask for one pin at
+// a time, which cost an HTTP round trip (and two platform calls) per pin per second.
+func (h *APIHandler) listGpioStates(w http.ResponseWriter, r *http.Request) {
+	pins, err := h.client.GpioManager.ListPins()
+	if err != nil {
+		handleGRPCError(w, err)
+		return
+	}
+	states := make([]gpioStateJSON, 0, len(pins))
+	for _, p := range pins {
+		if p == nil {
+			continue
+		}
+		state := gpioStateJSON{Name: p.Name, Number: p.Number, ChipNumber: p.ChipNumber}
+		// One pin that cannot be read must not lose the whole table.
+		level, err := h.client.GpioManager.GetLevel(p)
+		if err != nil {
+			state.Error = grpcMessage(err)
+			states = append(states, state)
+			continue
+		}
+		dir, err := h.client.GpioManager.GetDirection(p)
+		if err != nil {
+			state.Error = grpcMessage(err)
+			states = append(states, state)
+			continue
+		}
+		lvl, dirValue := int32(level), int32(dir)
+		state.Level, state.Direction = &lvl, &dirValue
+		states = append(states, state)
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"states": states})
+}
+
 func (h *APIHandler) getGpioLevel(w http.ResponseWriter, r *http.Request) {
-	pinName := r.URL.Query().Get("name")
-	var pinNumber int32
-	fmt.Sscan(r.URL.Query().Get("number"), &pinNumber)
-	var pinChip int32
-	fmt.Sscan(r.URL.Query().Get("chip"), &pinChip)
-	pin := &orbitclient.GpioPin{Name: pinName, Number: pinNumber, ChipNumber: pinChip}
+	pinNumber, err := queryInt32(r, "number")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	pinChip, err := queryInt32(r, "chip")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	pin := &orbitclient.GpioPin{Name: r.URL.Query().Get("name"), Number: pinNumber, ChipNumber: pinChip}
 	level, err := h.client.GpioManager.GetLevel(pin)
 	if err != nil {
 		handleGRPCError(w, err)
@@ -287,12 +424,15 @@ func (h *APIHandler) setGpioLevel(w http.ResponseWriter, r *http.Request) {
 		ChipNumber int32  `json:"chipNumber"`
 		Level      string `json:"level"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	level, err := parseGpioLevel(req.Level)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	pin := &orbitclient.GpioPin{Name: req.PinName, Number: req.PinNumber, ChipNumber: req.ChipNumber}
-	level := parseGpioLevel(req.Level)
 	if err := h.client.GpioManager.SetLevel(pin, level); err != nil {
 		handleGRPCError(w, err)
 		return
@@ -307,12 +447,15 @@ func (h *APIHandler) setGpioDirection(w http.ResponseWriter, r *http.Request) {
 		ChipNumber int32  `json:"chipNumber"`
 		Direction  string `json:"direction"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	direction, err := parseGpioDirection(req.Direction)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	pin := &orbitclient.GpioPin{Name: req.PinName, Number: req.PinNumber, ChipNumber: req.ChipNumber}
-	direction := parseGpioDirection(req.Direction)
 	if err := h.client.GpioManager.SetDirection(pin, direction); err != nil {
 		handleGRPCError(w, err)
 		return
@@ -330,10 +473,12 @@ func (h *APIHandler) listPwmPins(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *APIHandler) getPwm(w http.ResponseWriter, r *http.Request) {
-	pinName := r.URL.Query().Get("name")
-	var pinNumber int32
-	fmt.Sscan(r.URL.Query().Get("number"), &pinNumber)
-	ch := &orbitclient.PwmChannel{Name: pinName, Channel: uint32(pinNumber)}
+	pinNumber, err := queryUint32(r, "number")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	ch := &orbitclient.PwmChannel{Name: r.URL.Query().Get("name"), Channel: pinNumber}
 	state, err := h.client.PwmManager.GetProperties(ch)
 	if err != nil {
 		handleGRPCError(w, err)
@@ -349,8 +494,7 @@ func (h *APIHandler) setPwm(w http.ResponseWriter, r *http.Request) {
 		DutyCycle   float64 `json:"dutyCycle"`
 		FrequencyHz float64 `json:"frequencyHz"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	ch := &orbitclient.PwmChannel{Name: req.PinName, Channel: uint32(req.PinNumber)}
@@ -366,8 +510,7 @@ func (h *APIHandler) disablePwm(w http.ResponseWriter, r *http.Request) {
 		PinName   string `json:"pinName"`
 		PinNumber int32  `json:"pinNumber"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	ch := &orbitclient.PwmChannel{Name: req.PinName, Channel: uint32(req.PinNumber)}
@@ -396,8 +539,7 @@ func (h *APIHandler) openUart(w http.ResponseWriter, r *http.Request) {
 		StopBits    string `json:"stopBits"`
 		FlowControl string `json:"flowControl"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	cfg := orbitclient.UartConfig{
@@ -414,8 +556,13 @@ func (h *APIHandler) openUart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.uartMu.Lock()
+	previous := h.uartPorts[req.Port]
 	h.uartPorts[req.Port] = uartPort
 	h.uartMu.Unlock()
+	// Opening a port that was already open leaves the old handle behind on the device.
+	if previous != nil {
+		_ = previous.Close()
+	}
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
@@ -423,8 +570,7 @@ func (h *APIHandler) closeUart(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Port string `json:"port"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	h.uartMu.Lock()
@@ -475,20 +621,22 @@ func (h *APIHandler) writeUart(w http.ResponseWriter, r *http.Request) {
 		Data string `json:"data"`
 		Hex  bool   `json:"hex"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	var payload []byte
 	if req.Hex {
-		s := strings.ToLower(strings.TrimSpace(req.Data))
-		s = strings.ReplaceAll(s, "0x", "")
-		s = strings.ReplaceAll(s, " ", "")
-		for i := 0; i+1 < len(s); i += 2 {
-			var b byte
-			if _, err := fmt.Sscanf(s[i:i+2], "%02x", &b); err == nil {
-				payload = append(payload, b)
-			}
+		// Same parser as the I2C and SPI transfers: it refuses what it cannot read,
+		// instead of dropping the bytes it does not understand and writing the rest.
+		var err error
+		payload, err = parseFlexibleHex(req.Data)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if len(payload) == 0 {
+			http.Error(w, "no bytes to write", http.StatusBadRequest)
+			return
 		}
 	} else {
 		payload = []byte(req.Data)
@@ -519,12 +667,8 @@ func (h *APIHandler) uartListen(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-	flusher.Flush()
-	ctx := r.Context()
+	// Everything that can fail has to fail before the stream headers go out: once
+	// they are sent the status is 200 and an error can only arrive as stray text.
 	h.uartMu.Lock()
 	uartPort, ok := h.uartPorts[port]
 	h.uartMu.Unlock()
@@ -532,6 +676,12 @@ func (h *APIHandler) uartListen(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "port not open", http.StatusBadRequest)
 		return
 	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	flusher.Flush()
+	ctx := r.Context()
 	const maxChunkSize = 256
 	err := uartPort.Listen(ctx, maxChunkSize, func(data []byte) {
 		enc := base64.StdEncoding.EncodeToString(data)
@@ -575,14 +725,9 @@ func (h *APIHandler) listI2CBuses(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *APIHandler) scanI2CBus(w http.ResponseWriter, r *http.Request) {
-	busStr := r.URL.Query().Get("bus")
-	if busStr == "" {
-		http.Error(w, "bus query parameter required", http.StatusBadRequest)
-		return
-	}
-	var bus uint32
-	if _, err := fmt.Sscanf(busStr, "%d", &bus); err != nil {
-		http.Error(w, "invalid bus number", http.StatusBadRequest)
+	bus, err := queryUint32(r, "bus")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	b, err := h.getOrOpenI2CBus(bus)
@@ -595,18 +740,16 @@ func (h *APIHandler) scanI2CBus(w http.ResponseWriter, r *http.Request) {
 		handleGRPCError(w, err)
 		return
 	}
+	if addrs == nil {
+		addrs = []uint32{} // an empty bus answers [], never null
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"addresses": addrs})
 }
 
 func (h *APIHandler) getI2CConfig(w http.ResponseWriter, r *http.Request) {
-	busStr := r.URL.Query().Get("bus")
-	if busStr == "" {
-		http.Error(w, "bus query parameter required", http.StatusBadRequest)
-		return
-	}
-	var bus uint32
-	if _, err := fmt.Sscanf(busStr, "%d", &bus); err != nil {
-		http.Error(w, "invalid bus number", http.StatusBadRequest)
+	bus, err := queryUint32(r, "bus")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	h.i2cMu.Lock()
@@ -631,8 +774,7 @@ func (h *APIHandler) setI2CConfig(w http.ResponseWriter, r *http.Request) {
 		TenBitAddr      bool   `json:"tenBitAddr"`
 		ClockStretching bool   `json:"clockStretching"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	b, err := h.client.I2CManager.Open(req.Bus, req.ClockHz, req.TenBitAddr, req.ClockStretching)
@@ -640,6 +782,8 @@ func (h *APIHandler) setI2CConfig(w http.ResponseWriter, r *http.Request) {
 		handleGRPCError(w, err)
 		return
 	}
+	// Replacing the handle is enough: an I2C handle is a bus number, not a resource
+	// the device holds open (I2CManager.Open only sets the configuration).
 	h.i2cMu.Lock()
 	h.i2cBuses[req.Bus] = b
 	h.i2cMu.Unlock()
@@ -653,8 +797,7 @@ func (h *APIHandler) i2cTransfer(w http.ResponseWriter, r *http.Request) {
 		Data       string `json:"data"`
 		ReadLength uint32 `json:"readLength"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	var data []byte
@@ -738,19 +881,14 @@ func (h *APIHandler) listSpiDevices(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *APIHandler) getSpiConfig(w http.ResponseWriter, r *http.Request) {
-	busStr := r.URL.Query().Get("bus")
-	csStr := r.URL.Query().Get("chipSelect")
-	if busStr == "" || csStr == "" {
-		http.Error(w, "bus and chipSelect query parameters required", http.StatusBadRequest)
+	bus, err := queryUint32(r, "bus")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	var bus, cs uint32
-	if _, err := fmt.Sscanf(busStr, "%d", &bus); err != nil {
-		http.Error(w, "invalid bus number", http.StatusBadRequest)
-		return
-	}
-	if _, err := fmt.Sscanf(csStr, "%d", &cs); err != nil {
-		http.Error(w, "invalid chip select", http.StatusBadRequest)
+	cs, err := queryUint32(r, "chipSelect")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	h.spiMu.Lock()
@@ -777,8 +915,7 @@ func (h *APIHandler) setSpiConfig(w http.ResponseWriter, r *http.Request) {
 		LsbFirst    bool   `json:"lsbFirst"`
 		Mode        uint32 `json:"mode"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	d, err := h.client.SpiManager.Open(req.Bus, req.ChipSelect, req.MaxSpeedHz, req.BitsPerWord, int(req.Mode), req.LsbFirst)
@@ -799,8 +936,7 @@ func (h *APIHandler) spiTransfer(w http.ResponseWriter, r *http.Request) {
 		DataOut    string `json:"dataOut"`
 		ReadLength uint32 `json:"readLength"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	var dataOut []byte

@@ -19,6 +19,18 @@ func gpioPinsForAPI(pins []*orbitclient.GpioPin) []gpioPinJSON {
 	return out
 }
 
+// gpioStateJSON is one line of the table: the pin and what it is doing. Level and
+// direction are pointers so that a pin which could not be read says so, instead of
+// reporting the zero values (LOW and OUT) as if they had been measured.
+type gpioStateJSON struct {
+	Name       string `json:"name"`
+	Number     int32  `json:"number"`
+	ChipNumber int32  `json:"chipNumber"`
+	Level      *int32 `json:"level,omitempty"`
+	Direction  *int32 `json:"direction,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
 type pwmChannelJSON struct {
 	Name   string `json:"name"`
 	Number uint32 `json:"number"`
