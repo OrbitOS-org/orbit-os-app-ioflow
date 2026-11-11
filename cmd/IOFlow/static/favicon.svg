@@ -1,58 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none" aria-hidden="true">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img">
   <title>IOFlow</title>
-  <defs>
-    <linearGradient id="mcuBody" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1c1c28"/>
-      <stop offset="100%" stop-color="#0c0c12"/>
-    </linearGradient>
-    <linearGradient id="mcuAccent" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#7c6cff"/>
-      <stop offset="100%" stop-color="#a78bfa"/>
-    </linearGradient>
-    <linearGradient id="mcuPin" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#9ca3c8"/>
-      <stop offset="100%" stop-color="#5c5c78"/>
-    </linearGradient>
-  </defs>
-  <!-- QFP-style pins (grouped per edge) -->
-  <g stroke="url(#mcuAccent)" stroke-opacity="0.35" stroke-width="0.5">
-    <g fill="url(#mcuPin)">
-      <!-- top -->
-      <rect x="34" y="22" width="7" height="10" rx="1"/>
-      <rect x="44" y="22" width="7" height="10" rx="1"/>
-      <rect x="54" y="22" width="7" height="10" rx="1"/>
-      <rect x="64" y="22" width="7" height="10" rx="1"/>
-      <rect x="74" y="22" width="7" height="10" rx="1"/>
-      <rect x="84" y="22" width="7" height="10" rx="1"/>
-      <!-- bottom -->
-      <rect x="34" y="96" width="7" height="10" rx="1"/>
-      <rect x="44" y="96" width="7" height="10" rx="1"/>
-      <rect x="54" y="96" width="7" height="10" rx="1"/>
-      <rect x="64" y="96" width="7" height="10" rx="1"/>
-      <rect x="74" y="96" width="7" height="10" rx="1"/>
-      <rect x="84" y="96" width="7" height="10" rx="1"/>
-      <!-- left -->
-      <rect x="22" y="34" width="10" height="7" rx="1"/>
-      <rect x="22" y="44" width="10" height="7" rx="1"/>
-      <rect x="22" y="54" width="10" height="7" rx="1"/>
-      <rect x="22" y="64" width="10" height="7" rx="1"/>
-      <rect x="22" y="74" width="10" height="7" rx="1"/>
-      <rect x="22" y="84" width="10" height="7" rx="1"/>
-      <!-- right -->
-      <rect x="96" y="34" width="10" height="7" rx="1"/>
-      <rect x="96" y="44" width="10" height="7" rx="1"/>
-      <rect x="96" y="54" width="10" height="7" rx="1"/>
-      <rect x="96" y="64" width="10" height="7" rx="1"/>
-      <rect x="96" y="74" width="10" height="7" rx="1"/>
-      <rect x="96" y="84" width="10" height="7" rx="1"/>
-    </g>
+  <!-- Tile: Orbit OS app icon background, corners at 15.6% of the side -->
+  <rect width="128" height="128" rx="20" fill="#0A0F1A"/>
+  <!-- Package pins -->
+  <g fill="#8d8dad">
+    <rect x="44" y="12" width="10" height="18" rx="2"/>
+    <rect x="74" y="12" width="10" height="18" rx="2"/>
+    <rect x="44" y="98" width="10" height="18" rx="2"/>
+    <rect x="74" y="98" width="10" height="18" rx="2"/>
+    <rect x="12" y="44" width="18" height="10" rx="2"/>
+    <rect x="12" y="74" width="18" height="10" rx="2"/>
+    <rect x="98" y="44" width="18" height="10" rx="2"/>
+    <rect x="98" y="74" width="18" height="10" rx="2"/>
   </g>
   <!-- Package body -->
-  <rect x="32" y="32" width="64" height="64" rx="6" fill="url(#mcuBody)" stroke="url(#mcuAccent)" stroke-width="2"/>
+  <rect x="28" y="28" width="72" height="72" rx="12" fill="#1a1a28" stroke="#7c6cff" stroke-width="6"/>
   <!-- Pin-1 dot -->
-  <circle cx="42" cy="42" r="3" fill="url(#mcuAccent)" opacity="0.9"/>
-  <!-- Die / bond pad hint -->
-  <rect x="48" y="48" width="32" height="32" rx="3" fill="rgba(124,108,255,0.08)" stroke="url(#mcuAccent)" stroke-width="1" stroke-opacity="0.4"/>
-  <!-- Inner lines (address / data bus aesthetic) -->
-  <path d="M52 56h24M52 62h18M52 68h22M52 74h14" stroke="url(#mcuAccent)" stroke-width="1" stroke-opacity="0.25" stroke-linecap="round"/>
+  <circle cx="44" cy="44" r="5.5" fill="#7c6cff"/>
+  <!-- Data lines -->
+  <path d="M44 64 H86 M44 78 H74" stroke="#22d3ee" stroke-width="6" stroke-linecap="round"/>
 </svg>
