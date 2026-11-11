@@ -1,9 +1,10 @@
-// IOFlow: UI e API HTTP para GPIO, PWM, UART, I2C e SPI (manifest OrbitOS em metadata.json).
+// IOFlow: web UI and HTTP API for GPIO, PWM, UART, I2C and SPI (Orbit OS manifest in metadata.json).
 package main
 
 import (
 	"embed"
 	"flag"
+	"fmt"
 	"io/fs"
 	"log"
 	"net"
@@ -22,7 +23,19 @@ import (
 	"orbit-os-ioflow-go/internal/settingsclient"
 )
 
-const logTag = "main"
+const (
+	logTag = "main"
+
+	// Web interface ports are reserved to this range on Orbit OS.
+	portMin = 50000
+	portMax = 60000
+
+	// defaultPort is the port IOFlow asks for first.
+	defaultPort = 50090
+
+	// webRoute is the path the Launcher serves the page at.
+	webRoute = "/ioflow"
+)
 
 //go:embed metadata.json
 var metadataJSON []byte
@@ -36,9 +49,10 @@ var staticFS embed.FS
 var appManifest = metadata.MustParseAppManifestJSON(metadataJSON)
 
 func main() {
-	port := flag.String("port", "9000", "HTTP listen port")
-	host := flag.String("host", "192.168.5.131", "gRPC host (TCP)")
-	grpcPort := flag.Int("grpc-port", 6000, "gRPC port (TCP fallback when UDS socket is absent)")
+	port := flag.Int("port", defaultPort, fmt.Sprintf("preferred HTTP port, inside the reserved range %d-%d (rolls to the next free one)", portMin, portMax))
+	host := flag.String("host", "", "device address for gRPC over TCP — development only, when running this app on your computer against a device in Developer Mode")
+	grpcPort := flag.Int("grpc-port", 6000, "gRPC port (TCP fallback when the local socket is absent)")
+	certsDir := flag.String("certs", certs.DefaultDir, "directory with the development TLS material (ca.crt, client.crt, client.key) — only used for the TCP fallback")
 	flag.Parse()
 
 	appMeta := metadata.Build(appManifest)
@@ -48,6 +62,11 @@ func main() {
 	logger.Infof(logTag, "--- %s ---", appMeta.Name)
 	appManifest.PrintInfo()
 
+	tlsMaterial, err := certs.Load(*certsDir)
+	if err != nil {
+		log.Fatalf("TLS material: %v", err)
+	}
+
 	var grpcBundle *settingsclient.Bundle
 	retry := 5 * time.Second
 	for {
@@ -55,9 +74,10 @@ func main() {
 		grpcBundle, err = settingsclient.Connect(settingsclient.Options{
 			Host:       *host,
 			GRPCPort:   *grpcPort,
-			CACert:     certs.CACert,
-			ClientCert: certs.ClientCert,
-			ClientKey:  certs.ClientKey,
+			CertsDir:   tlsMaterial.Dir,
+			CACert:     tlsMaterial.CACert,
+			ClientCert: tlsMaterial.ClientCert,
+			ClientKey:  tlsMaterial.ClientKey,
 		})
 		if err == nil {
 			break
@@ -90,28 +110,13 @@ func main() {
 	})
 	mux.HandleFunc("/gpio", webHandler.HandleGpio)
 
-	// Bind loopback only — not reachable as http://<device-ip>:port on the LAN; use the AppHub portal route.
-	listenAddr := net.JoinHostPort("127.0.0.1", *port)
-	logger.Infof(logTag, "HTTP listening on http://%s (via portal /ioflow; not exposed on 0.0.0.0)", listenAddr)
-
-	httpPort, err := strconv.Atoi(*port)
+	// Loopback only: the page is reached through the Launcher, behind the device login,
+	// and never directly at http://<device-ip>:<port>.
+	ln, httpPort, err := listenAndRegister(grpcBundle, *port, webRoute)
 	if err != nil {
-		log.Fatalf("invalid -port %q: %v", *port, err)
+		log.Fatalf("web UI: %v", err)
 	}
-
-	ln, err := net.Listen("tcp", listenAddr)
-	if err != nil {
-		log.Fatalf("listen %s: %v", listenAddr, err)
-	}
-
-	if grpcBundle.AppHubManager != nil {
-		regErr := grpcBundle.RegisterWebUI(net.JoinHostPort("127.0.0.1", *port), "/ioflow")
-		if regErr != nil {
-			logger.Warnf(logTag, "AppHub RegisterWebUI: %v (portal tile unavailable)", regErr)
-		} else {
-			logger.Infof(logTag, "AppHub: registered at /ioflow → 127.0.0.1:%d", httpPort)
-		}
-	}
+	logger.Infof(logTag, "HTTP listening on http://127.0.0.1:%d — open it at %s in the Launcher", httpPort, webRoute)
 
 	go func() {
 		ch := make(chan os.Signal, 1)
@@ -129,4 +134,42 @@ func main() {
 	if err := http.Serve(ln, mux); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// listenAndRegister takes a loopback port from the reserved range, starting at
+// preferred, and registers the page with the Launcher. It rolls to the next port in
+// the range when one is taken or the Launcher refuses it, and returns the listener
+// to serve on together with the port it got.
+func listenAndRegister(bundle *settingsclient.Bundle, preferred int, route string) (net.Listener, int, error) {
+	if preferred < portMin || preferred > portMax {
+		logger.Warnf(logTag, "port %d is outside the reserved range %d-%d — starting at %d", preferred, portMin, portMax, defaultPort)
+		preferred = defaultPort
+	}
+
+	span := portMax - portMin + 1
+	for i := 0; i < span; i++ {
+		port := portMin + (preferred-portMin+i)%span
+		addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			continue // port taken — roll to the next one
+		}
+
+		if bundle.AppHubManager == nil {
+			logger.Warnf(logTag, "AppHub unavailable: serving on %s without a Launcher tile", addr)
+			return ln, port, nil
+		}
+
+		if err := bundle.RegisterWebUI(addr, route); err != nil {
+			logger.Warnf(logTag, "AppHub RegisterWebUI on %s: %v — rolling to the next port", addr, err)
+			_ = ln.Close()
+			continue // Launcher refused — roll to the next one
+		}
+
+		logger.Infof(logTag, "AppHub: registered at %s → %s", route, addr)
+		return ln, port, nil
+	}
+
+	return nil, 0, fmt.Errorf("no free web UI port in %d-%d", portMin, portMax)
 }
