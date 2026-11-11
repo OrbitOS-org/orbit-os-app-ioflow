@@ -2,7 +2,9 @@
 package main
 
 import (
+	"context"
 	"embed"
+	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -118,21 +120,85 @@ func main() {
 	}
 	logger.Infof(logTag, "HTTP listening on http://127.0.0.1:%d — open it at %s in the Launcher", httpPort, webRoute)
 
+	go watchPlatform(grpcBundle, apiHandler, net.JoinHostPort("127.0.0.1", strconv.Itoa(httpPort)), webRoute)
+
+	srv := &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		// No WriteTimeout on purpose: the UART log is a stream that stays open for
+		// as long as the user is watching it.
+	}
+
 	go func() {
 		ch := make(chan os.Signal, 1)
 		signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 		<-ch
 		logger.Infof(logTag, "shutting down…")
+
 		if uerr := grpcBundle.UnregisterWebUI(); uerr != nil {
 			logger.Warnf(logTag, "AppHub UnregisterWebUI: %v", uerr)
 		}
+
+		// A UART stream never ends on its own, so the polite stop gets a deadline
+		// and then the rest of the connections are cut.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			_ = srv.Close()
+		}
+
+		// Give the hardware back before the connection goes.
+		if cerr := apiHandler.Close(); cerr != nil {
+			logger.Warnf(logTag, "releasing peripherals: %v", cerr)
+		}
 		_ = grpcBundle.Close()
-		_ = ln.Close()
 		os.Exit(0)
 	}()
 
-	if err := http.Serve(ln, mux); err != nil {
+	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
+	}
+}
+
+// watchPlatform puts back what the platform forgets when it restarts.
+//
+// The gRPC connection itself heals: the client reconnects on its own and the
+// handlers answer 503 while it is down. What does not come back is the page's
+// registration with the Launcher and the peripheral handles, which belonged to the
+// process that went away — so they are renewed once the platform answers again.
+func watchPlatform(bundle *settingsclient.Bundle, api *handlers.APIHandler, addr, route string) {
+	const (
+		probeEvery  = 15 * time.Second
+		failsToTrip = 2 // a single timeout is not an outage
+	)
+
+	fails, down := 0, false
+	for {
+		time.Sleep(probeEvery)
+
+		if _, err := bundle.GpioManager.ListPins(); err != nil {
+			fails++
+			if !down && fails >= failsToTrip {
+				down = true
+				logger.Warnf(logTag, "platform unreachable: %v — waiting for it to come back", err)
+			}
+			continue
+		}
+
+		fails = 0
+		if !down {
+			continue
+		}
+		down = false
+
+		logger.Infof(logTag, "platform back — dropping stale handles and registering the page again")
+		if err := api.Close(); err != nil {
+			logger.Warnf(logTag, "releasing stale handles: %v", err)
+		}
+		if err := bundle.RegisterWebUI(addr, route); err != nil {
+			logger.Warnf(logTag, "AppHub RegisterWebUI: %v", err)
+		}
 	}
 }
 
