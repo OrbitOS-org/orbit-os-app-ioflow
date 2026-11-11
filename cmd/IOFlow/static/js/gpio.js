@@ -153,9 +153,11 @@ async function refreshGpioTableStates() {
         return;
     }
 
+    // By name: the name is what tells pins apart on every board (on some, such as
+    // pins behind a microcontroller, chip and line are 0 for all of them).
     const byPin = new Map();
     for (const state of states) {
-        byPin.set(`${state.chipNumber}:${state.number}`, state);
+        byPin.set(state.name, state);
     }
 
     gpioPinsList.forEach((pin, idx) => {
@@ -163,7 +165,7 @@ async function refreshGpioTableStates() {
         if (!row) return;
         const dirLab = row.querySelector('.gpio-dir-label');
         const lvlLab = row.querySelector('.gpio-lvl-label');
-        const state = byPin.get(`${gpioPinChip(pin)}:${pin.number}`);
+        const state = byPin.get(pin.name);
 
         // A pin the device could not read comes back with an error and no values.
         if (!state || state.level === undefined || state.direction === undefined) {
