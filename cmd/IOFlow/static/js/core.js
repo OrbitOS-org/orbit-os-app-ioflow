@@ -123,11 +123,6 @@ function showNotification(message, type) {
     setTimeout(() => { n.style.animation = 'fadeOut .3s ease'; setTimeout(() => n.remove(), 300); }, 4000);
 }
 
-// Alias for network.js compatibility
-function showNetworkNotification(message, type) {
-    showNotification(message, type);
-}
-
 // ============================================
 // Confirm Dialog (global, replaces browser confirm)
 // ============================================

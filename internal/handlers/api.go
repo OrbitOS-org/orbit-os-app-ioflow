@@ -117,7 +117,7 @@ func parseUartFlowControl(s string) orbitclient.UartFlowControl {
 	}
 }
 
-// uartConfigJSON matches orbit-os-dashboard REST (sdk.UartConfig): camelCase keys and string parity/stopBits/flowControl.
+// uartConfigJSON is the shape the page expects (sdk.UartConfig): camelCase keys, with parity, stopBits and flowControl as strings.
 // encoding/json on orbitclient.UartConfig would emit "Port", "Parity" as ints — the UI expects baudrate, parity, etc.
 type uartConfigJSON struct {
 	Port        string `json:"port"`
@@ -190,7 +190,7 @@ func uartErrMeansPortNotOpen(err error) bool {
 	return false
 }
 
-// HandleGpio serve GPIO, PWM, UART, I2C e SPI em /api/gpio/…
+// HandleGpio serves GPIO, PWM, UART, I2C and SPI under /api/gpio/.
 func (h *APIHandler) HandleGpio(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
