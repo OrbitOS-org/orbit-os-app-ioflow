@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	orbitclient "github.com/OrbitOS-org/orbit-os-sdk-go/v26/client"
 	"google.golang.org/grpc/codes"
@@ -25,18 +26,24 @@ type APIHandler struct {
 
 	uartMu    sync.Mutex
 	uartPorts map[string]*orbitclient.UartPort
+	uartHubs  map[string]*uartHub // one reader per open port, shared by every page
 
 	i2cMu    sync.Mutex
 	i2cBuses map[uint32]*orbitclient.I2CBus
 
 	spiMu   sync.Mutex
 	spiDevs map[spiKey]*orbitclient.SpiDevice
+
+	// gpio keeps what does not need asking every second: the pin list (fixed
+	// while the platform runs) and each pin's direction (changes only when set).
+	gpio gpioCache
 }
 
 func NewAPIHandler(c *settingsclient.Bundle) *APIHandler {
 	return &APIHandler{
 		client:    c,
 		uartPorts: make(map[string]*orbitclient.UartPort),
+		uartHubs:  make(map[string]*uartHub),
 		i2cBuses:  make(map[uint32]*orbitclient.I2CBus),
 		spiDevs:   make(map[spiKey]*orbitclient.SpiDevice),
 	}
@@ -47,10 +54,17 @@ func NewAPIHandler(c *settingsclient.Bundle) *APIHandler {
 // nothing to give back — but all three maps are cleared so a later connection
 // starts from a clean state.
 func (h *APIHandler) Close() error {
+	h.gpio.reset()
+
 	h.uartMu.Lock()
 	ports := h.uartPorts
 	h.uartPorts = make(map[string]*orbitclient.UartPort)
+	hubs := h.uartHubs
+	h.uartHubs = make(map[string]*uartHub)
 	h.uartMu.Unlock()
+	for _, hub := range hubs {
+		hub.stop()
+	}
 
 	var firstErr error
 	for name, port := range ports {
@@ -293,6 +307,8 @@ func (h *APIHandler) HandleGpio(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/gpio/")
 	method := r.Method
 	switch {
+	case path == "info" && method == "GET":
+		h.boardInfo(w, r)
 	case path == "states" && method == "GET":
 		h.listGpioStates(w, r)
 	case path == "pins" && method == "GET":
@@ -347,7 +363,7 @@ func (h *APIHandler) HandleGpio(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *APIHandler) listGpioPins(w http.ResponseWriter, r *http.Request) {
-	pins, err := h.client.GpioManager.ListPins()
+	pins, err := h.gpio.list(h.client.GpioManager.ListPins)
 	if err != nil {
 		handleGRPCError(w, err)
 		return
@@ -357,17 +373,23 @@ func (h *APIHandler) listGpioPins(w http.ResponseWriter, r *http.Request) {
 
 // listGpioStates reads every pin in one request. The page used to ask for one pin at
 // a time, which cost an HTTP round trip (and two platform calls) per pin per second.
+// Each refresh reads the levels; the pin list is kept, and the directions are read
+// again only when they are older than directionMaxAge (the app updates the ones it
+// sets itself), so a refresh costs one platform call per pin.
 func (h *APIHandler) listGpioStates(w http.ResponseWriter, r *http.Request) {
-	pins, err := h.client.GpioManager.ListPins()
+	pins, err := h.gpio.list(h.client.GpioManager.ListPins)
 	if err != nil {
 		handleGRPCError(w, err)
 		return
 	}
+	dirs, stale := h.gpio.directions()
+	fresh := make(map[string]orbitclient.GpioDirection, len(pins))
 	states := make([]gpioStateJSON, 0, len(pins))
 	for _, p := range pins {
 		if p == nil {
 			continue
 		}
+		key := pinKey(p)
 		state := gpioStateJSON{Name: p.Name, Number: p.Number, ChipNumber: p.ChipNumber}
 		// One pin that cannot be read must not lose the whole table.
 		level, err := h.client.GpioManager.GetLevel(p)
@@ -376,15 +398,26 @@ func (h *APIHandler) listGpioStates(w http.ResponseWriter, r *http.Request) {
 			states = append(states, state)
 			continue
 		}
-		dir, err := h.client.GpioManager.GetDirection(p)
-		if err != nil {
-			state.Error = grpcMessage(err)
-			states = append(states, state)
-			continue
+		dir, known := dirs[key]
+		if stale || !known {
+			dir, err = h.client.GpioManager.GetDirection(p)
+			if err != nil {
+				state.Error = grpcMessage(err)
+				states = append(states, state)
+				continue
+			}
+			if !stale {
+				h.gpio.setDirection(key, dir)
+			}
 		}
+		fresh[key] = dir
 		lvl, dirValue := int32(level), int32(dir)
 		state.Level, state.Direction = &lvl, &dirValue
 		states = append(states, state)
+	}
+	// A pin that failed is left out and asked again on the next refresh.
+	if stale {
+		h.gpio.storeDirections(fresh)
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"states": states})
 }
@@ -433,7 +466,10 @@ func (h *APIHandler) setGpioLevel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pin := &orbitclient.GpioPin{Name: req.PinName, Number: req.PinNumber, ChipNumber: req.ChipNumber}
-	if err := h.client.GpioManager.SetLevel(pin, level); err != nil {
+	err = h.client.GpioManager.SetLevel(pin, level)
+	// Setting a level may change the direction on some boards: read it again.
+	h.gpio.forget(pinKey(pin))
+	if err != nil {
 		handleGRPCError(w, err)
 		return
 	}
@@ -457,9 +493,11 @@ func (h *APIHandler) setGpioDirection(w http.ResponseWriter, r *http.Request) {
 	}
 	pin := &orbitclient.GpioPin{Name: req.PinName, Number: req.PinNumber, ChipNumber: req.ChipNumber}
 	if err := h.client.GpioManager.SetDirection(pin, direction); err != nil {
+		h.gpio.forget(pinKey(pin))
 		handleGRPCError(w, err)
 		return
 	}
+	h.gpio.setDirection(pinKey(pin), direction)
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
@@ -558,7 +596,17 @@ func (h *APIHandler) openUart(w http.ResponseWriter, r *http.Request) {
 	h.uartMu.Lock()
 	previous := h.uartPorts[req.Port]
 	h.uartPorts[req.Port] = uartPort
+	oldHub := h.uartHubs[req.Port]
+	delete(h.uartHubs, req.Port)
 	h.uartMu.Unlock()
+	// The pages reading the old handle stop; they start again on the new one.
+	if oldHub != nil {
+		oldHub.stop()
+		select { // a page that listens right after this must not meet the old stream
+		case <-oldHub.ended:
+		case <-time.After(prevWait):
+		}
+	}
 	// Opening a port that was already open leaves the old handle behind on the device.
 	if previous != nil {
 		_ = previous.Close()
@@ -578,7 +626,12 @@ func (h *APIHandler) closeUart(w http.ResponseWriter, r *http.Request) {
 	if ok {
 		delete(h.uartPorts, req.Port)
 	}
+	hub := h.uartHubs[req.Port]
+	delete(h.uartHubs, req.Port)
 	h.uartMu.Unlock()
+	if hub != nil {
+		hub.stop()
+	}
 	if !ok {
 		json.NewEncoder(w).Encode(map[string]bool{"success": true})
 		return
@@ -669,33 +722,66 @@ func (h *APIHandler) uartListen(w http.ResponseWriter, r *http.Request) {
 	}
 	// Everything that can fail has to fail before the stream headers go out: once
 	// they are sent the status is 200 and an error can only arrive as stray text.
-	h.uartMu.Lock()
-	uartPort, ok := h.uartPorts[port]
-	h.uartMu.Unlock()
+	hub, err := h.uartHub(port)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	ch, ok := hub.subscribe()
 	if !ok {
 		http.Error(w, "port not open", http.StatusBadRequest)
 		return
 	}
+	defer hub.unsubscribe(ch)
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 	flusher.Flush()
-	ctx := r.Context()
-	const maxChunkSize = 256
-	err := uartPort.Listen(ctx, maxChunkSize, func(data []byte) {
-		enc := base64.StdEncoding.EncodeToString(data)
-		payload, _ := json.Marshal(map[string]string{"data": enc})
-		if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
-			return
+	for {
+		select {
+		case <-r.Context().Done():
+			return // the page left
+		case m, open := <-ch:
+			if !open {
+				return // the port was closed or reopened
+			}
+			var payload []byte
+			if m.err != "" {
+				payload, _ = json.Marshal(map[string]string{"error": m.err})
+			} else {
+				payload, _ = json.Marshal(map[string]string{"data": base64.StdEncoding.EncodeToString(m.data)})
+			}
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
+				return // the page is gone: only its subscription ends
+			}
+			flusher.Flush()
 		}
-		flusher.Flush()
-	})
-	if err != nil && ctx.Err() == nil {
-		payload, _ := json.Marshal(map[string]string{"error": err.Error()})
-		fmt.Fprintf(w, "data: %s\n\n", payload)
-		flusher.Flush()
 	}
+}
+
+// uartHub returns the reader of an open port, starting it for the first page.
+func (h *APIHandler) uartHub(port string) (*uartHub, error) {
+	h.uartMu.Lock()
+	defer h.uartMu.Unlock()
+	uartPort, ok := h.uartPorts[port]
+	if !ok {
+		return nil, errors.New("port not open")
+	}
+	prev := h.uartHubs[port]
+	if prev != nil && prev.alive() {
+		return prev, nil
+	}
+	hub := newUartHub(uartPort, prev, func(ended *uartHub) {
+		h.uartMu.Lock()
+		if h.uartHubs[port] == ended {
+			delete(h.uartHubs, port)
+		}
+		h.uartMu.Unlock()
+	})
+	h.uartHubs[port] = hub
+	return hub, nil
 }
 
 func (h *APIHandler) getOrOpenI2CBus(bus uint32) (*orbitclient.I2CBus, error) {

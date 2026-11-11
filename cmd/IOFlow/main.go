@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -91,7 +92,6 @@ func main() {
 	logger.Infof(logTag, "gRPC client connected")
 
 	apiHandler := handlers.NewAPIHandler(grpcBundle)
-	webHandler := handlers.NewWebHandlerWithFS(templatesFS)
 
 	mux := http.NewServeMux()
 
@@ -99,7 +99,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("static FS: %v", err)
 	}
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticContent))))
+	webHandler := handlers.NewWebHandlerWithFS(templatesFS, staticContent)
+	mux.Handle("/static/", http.StripPrefix("/static/", handlers.NewStaticHandler(staticContent)))
 
 	mux.HandleFunc("/api/gpio/", apiHandler.HandleGpio)
 
@@ -212,6 +213,9 @@ func listenAndRegister(bundle *settingsclient.Bundle, preferred int, route strin
 		preferred = defaultPort
 	}
 
+	// Each refusal is a call to the device: a few are worth trying, not the whole range.
+	const maxRefusals = 20
+	refused := 0
 	span := portMax - portMin + 1
 	for i := 0; i < span; i++ {
 		port := portMin + (preferred-portMin+i)%span
@@ -228,8 +232,22 @@ func listenAndRegister(bundle *settingsclient.Bundle, preferred int, route strin
 		}
 
 		if err := bundle.RegisterWebUI(addr, route); err != nil {
+			// The route is taken (another IOFlow, e.g. the installed one while this one
+			// runs on a computer): no port changes that, so serve without a tile.
+			if strings.Contains(err.Error(), "ALREADY_EXISTS") {
+				logger.Warnf(logTag, "AppHub: %s is taken (%v) — serving on %s without a Launcher tile", route, err, addr)
+				return ln, port, nil
+			}
+			// Not allowed (e.g. Developer Mode off when running on a computer): no port changes that either.
+			if strings.Contains(err.Error(), "PermissionDenied") {
+				_ = ln.Close()
+				return nil, 0, fmt.Errorf("the device refused the web UI: %w (running on a computer needs Developer Mode on the device)", err)
+			}
 			logger.Warnf(logTag, "AppHub RegisterWebUI on %s: %v — rolling to the next port", addr, err)
 			_ = ln.Close()
+			if refused++; refused >= maxRefusals {
+				return nil, 0, fmt.Errorf("the Launcher refused the web UI %d times, last: %w", refused, err)
+			}
 			continue // Launcher refused — roll to the next one
 		}
 

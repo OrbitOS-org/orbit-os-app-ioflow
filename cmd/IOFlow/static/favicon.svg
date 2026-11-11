@@ -1,22 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img">
   <title>IOFlow</title>
-  <!-- Tile: Orbit OS app icon background, corners at 15.6% of the side -->
-  <rect width="128" height="128" rx="20" fill="#0A0F1A"/>
-  <!-- Package pins -->
-  <g fill="#8d8dad">
-    <rect x="44" y="12" width="10" height="18" rx="2"/>
-    <rect x="74" y="12" width="10" height="18" rx="2"/>
-    <rect x="44" y="98" width="10" height="18" rx="2"/>
-    <rect x="74" y="98" width="10" height="18" rx="2"/>
-    <rect x="12" y="44" width="18" height="10" rx="2"/>
-    <rect x="12" y="74" width="18" height="10" rx="2"/>
-    <rect x="98" y="44" width="18" height="10" rx="2"/>
-    <rect x="98" y="74" width="18" height="10" rx="2"/>
-  </g>
-  <!-- Package body -->
-  <rect x="28" y="28" width="72" height="72" rx="12" fill="#1a1a28" stroke="#7c6cff" stroke-width="6"/>
-  <!-- Pin-1 dot -->
-  <circle cx="44" cy="44" r="5.5" fill="#7c6cff"/>
-  <!-- Data lines -->
-  <path d="M44 64 H86 M44 78 H74" stroke="#22d3ee" stroke-width="6" stroke-linecap="round"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#132034"/><stop offset="1" stop-color="#0a0f18"/></linearGradient>
+    <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#34d399"/></linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <path d="M14 84 H34 V40 H60 V84 H80 V40 H114" fill="none" stroke="url(#wave)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="14" cy="84" r="8" fill="#22d3ee"/>
+  <circle cx="114" cy="40" r="8" fill="#34d399"/>
 </svg>

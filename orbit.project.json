@@ -8,6 +8,7 @@
   "sdkVersion": "v26.1.0",
   "targetArch": [
     "arm64",
-    "armv6"
+    "armv6",
+    "armv7"
   ]
 }

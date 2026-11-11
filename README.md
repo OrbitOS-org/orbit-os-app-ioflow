@@ -24,13 +24,13 @@ Runs on Raspberry Pi, Arduino UNO Q and other ARM64 devices with Orbit OS (free 
 ## Features
 
 - **GPIO** — list the pins with their names and state, change direction, read and set levels
-- **PWM** — list the channels the device offers, set period and duty cycle, disable a channel
+- **PWM** — list the channels the device offers, set frequency and duty cycle, turn a channel on and off
 - **UART** — pick a port, set it up, send data and watch what arrives, live
-- **I2C** — list the buses, scan for addresses and run read/write transfers
-- **SPI** — list the devices, set mode, speed and bits, and run transfers
-- **One workflow** — all five families as tabs on the same page, in light-on-dark
+- **I2C** — set the bus up, scan for addresses, then read and write a device's registers
+- **SPI** — set mode, speed and bits, and run transfers with what was sent and received side by side
+- **One workflow** — all five families as tabs on the same page; dark by default, with a light theme
 - **Nothing to install on your computer** — the page is served by the device itself
-- **No internet needed** — the whole interface, fonts and icons included, travels with the app
+- **No internet needed** — the whole interface, icons included, travels with the app (about 40 KB)
 
 ## Install
 
@@ -101,12 +101,6 @@ layout for Go apps:
   `SpiService`, `UartService`.
 - Driving pins changes the state of real hardware. On a board you care about, check what is wired to a pin
   before you set it.
-
-## Acknowledgments
-
-The page bundles [Font Awesome Free](https://fontawesome.com/) (icons under CC BY 4.0, fonts under SIL OFL
-1.1) and the [Inter](https://rsms.me/inter/) typeface (SIL OFL 1.1). Both are served by the app itself, so
-the page looks the same on a device with no internet access.
 
 ## Links
 

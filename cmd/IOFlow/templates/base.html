@@ -3,31 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{.Title}} · OrbitOS</title>
-    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-    <link rel="apple-touch-icon" href="/static/logo8.png">
-    <link rel="stylesheet" href="/static/vendor/inter/inter.css">
-    <link rel="stylesheet" href="/static/css/style.css">
-    <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css">
+    <meta name="color-scheme" content="dark">
+    <title>{{.Title}} · Orbit OS</title>
+    <link rel="icon" type="image/svg+xml" href="{{asset "favicon.svg"}}">
+    <link rel="stylesheet" href="{{asset "css/style.css"}}">
+    <script>try{var t=localStorage.getItem('ioflow-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
-<body class="app-shell">
-    <div class="main-wrapper">
-        <main class="main-content">
-            <div class="container">
-                {{block "content" .}}{{end}}
-            </div>
-        </main>
-
-        <footer class="main-footer">
-            <div class="footer-container">
-                <p>&copy; <span id="current-year"></span> {{.Title}} · OrbitOS</p>
-                <span class="footer-version">v{{.Version}}</span>
-            </div>
-        </footer>
-    </div>
-
-    <script src="/static/js/core.js"></script>
-    {{if .LoadLogViewer}}<script src="/static/js/logViewer.js"></script>{{end}}
-    <script src="/static/js/{{.ScriptFile}}.js"></script>
+<body>
+    {{block "content" .}}{{end}}
+    <footer class="foot"><span>{{.Title}} v{{.Version}}</span><svg class="brand" viewBox="0 0 759.76 192" role="img" aria-label="Orbit OS"><use href="{{asset "orbit-os-logo.svg"}}#logo"/></svg></footer>
+    <script src="{{asset "js/core.js"}}"></script>
+    <script src="{{asset (printf "js/%s.js" .ScriptFile)}}"></script>
 </body>
 </html>

@@ -1,429 +1,138 @@
 {{define "content"}}
-<div class="page-header page-header--hero">
-    <div class="page-header-visual">
-        <img src="/static/logo8.png" alt="OrbitOS" class="page-hero-logo8" width="140" height="auto" decoding="async"/>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="ic-gpio" viewBox="0 0 24 24"><path d="M9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4"/><rect x="7" y="7" width="10" height="10" rx="2"/></symbol>
+  <symbol id="ic-pwm" viewBox="0 0 24 24"><path d="M2 17h4V7h5v10h3V7h3v10h5"/></symbol>
+  <symbol id="ic-uart" viewBox="0 0 24 24"><path d="M4 8h13l-3-3M20 16H7l3 3"/></symbol>
+  <symbol id="ic-i2c" viewBox="0 0 24 24"><path d="M3 7h18M3 13h18M7 7v10M15 13v4"/><rect x="5" y="17" width="4" height="3" rx="1"/><rect x="13" y="17" width="4" height="3" rx="1"/></symbol>
+  <symbol id="ic-spi" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18M8 4v4M14 10v4M18 16v4"/></symbol>
+  <symbol id="ic-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></symbol>
+  <symbol id="ic-send" viewBox="0 0 24 24"><path d="M4 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="ic-scan" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></symbol>
+  <symbol id="ic-clear" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></symbol>
+</svg>
+
+<div class="app">
+  <header class="top">
+    <img src="{{asset "ioflow-icon.svg"}}" alt="" width="36" height="36">
+    <div class="top-t"><h1>IOFlow</h1><div class="dev" id="dev">&nbsp;</div></div>
+    <span class="live" id="live" hidden><i></i>live · 1 s</span>
+    <button class="iconbtn" id="theme" title="Light / dark" aria-label="Light or dark theme"><svg class="i"><use href="#ic-theme"/></svg></button>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true" data-p="gpio"><svg class="i"><use href="#ic-gpio"/></svg>GPIO</button>
+    <button class="tab" role="tab" aria-selected="false" data-p="pwm"><svg class="i"><use href="#ic-pwm"/></svg>PWM</button>
+    <button class="tab" role="tab" aria-selected="false" data-p="uart"><svg class="i"><use href="#ic-uart"/></svg>UART</button>
+    <button class="tab" role="tab" aria-selected="false" data-p="i2c"><svg class="i"><use href="#ic-i2c"/></svg>I²C</button>
+    <button class="tab" role="tab" aria-selected="false" data-p="spi"><svg class="i"><use href="#ic-spi"/></svg>SPI</button>
+  </nav>
+
+  <!-- GPIO -->
+  <section class="pane on" id="p-gpio" role="tabpanel">
+    <div class="bar">
+      <button class="chip" aria-pressed="true" data-f="all">All</button>
+      <button class="chip" aria-pressed="false" data-f="out">Outputs</button>
+      <button class="chip" aria-pressed="false" data-f="in">Inputs</button>
+      <button class="chip" aria-pressed="false" data-f="hi">HIGH</button>
+      <span class="sp"></span>
+      <span class="hint">Set a pin to Out to drive it. Inputs are read every second.</span>
     </div>
-    <div class="page-header-text">
-        <h1 class="page-title-with-icon">
-            <img src="/static/ioflow-icon.svg" alt="" class="page-title-icon" width="44" height="44" decoding="async" aria-hidden="true"/>
-            <span>IOFlow</span>
-        </h1>
-        <p class="page-lead">GPIO, PWM, UART, I2C and SPI in one place.</p>
+    <div class="pins" id="pins"><p class="empty">Loading pins…</p></div>
+  </section>
+
+  <!-- PWM -->
+  <section class="pane" id="p-pwm" role="tabpanel"><div class="grid2" id="pwms"><p class="empty">Loading channels…</p></div></section>
+
+  <!-- UART: 1 the port and its settings, 2 transfers -->
+  <section class="pane" id="p-uart" role="tabpanel">
+    <div class="steps">
+      <div class="card">
+        <h3><span class="stepn">1</span>Port<select id="u-port" aria-label="Port"></select><span class="sp"></span>
+          <span class="hint" id="u-state">Closed</span><button class="sw" role="switch" aria-checked="false" id="u-open" title="Open / close"></button></h3>
+        <div class="row">
+          <label class="f">Baud<select id="u-baud"><option>1200</option><option>2400</option><option>4800</option><option>9600</option><option>19200</option><option>38400</option><option>57600</option><option selected>115200</option><option>230400</option><option>460800</option></select></label>
+          <label class="f">Data<select id="u-data"><option>7</option><option selected>8</option></select></label>
+          <label class="f">Parity<select id="u-parity"><option value="none" selected>None</option><option value="even">Even</option><option value="odd">Odd</option></select></label>
+          <label class="f">Stop<select id="u-stop"><option selected>1</option><option>2</option></select></label>
+          <label class="f">Flow<select id="u-flow"><option value="none" selected>None</option><option value="hardware">RTS/CTS</option><option value="software">XON/XOFF</option></select></label>
+        </div>
+        <span class="hint">The settings are used when the port opens; close it to change them.</span>
+      </div>
+      <div class="card">
+        <h3><span class="stepn">2</span>Transfer<span class="sp"></span>
+          <label class="f chk inline">View<select id="u-view"><option value="text" selected>Text</option><option value="hex">Hex</option></select></label>
+          <label class="f chk inline"><input type="checkbox" id="u-echo" checked> Hide echo</label>
+          <button class="btn" id="u-clear" title="Clear"><svg class="i"><use href="#ic-clear"/></svg></button></h3>
+        <div class="console" id="u-log" aria-live="polite"></div>
+        <div class="row">
+          <select id="u-txmode" title="Send as" aria-label="Send as"><option value="text" selected>Text</option><option value="hex">Hex</option></select>
+          <input class="in grow" id="u-tx" placeholder="Open the port, then type and press Enter" autocomplete="off" disabled>
+          <select id="u-eol" title="Line ending" aria-label="Line ending"><option value="none">None</option><option value="lf">LF</option><option value="cr">CR</option><option value="crlf" selected>CRLF</option></select>
+          <button class="btn pri" id="u-send" disabled><svg class="i"><use href="#ic-send"/></svg>Send</button>
+        </div>
+      </div>
     </div>
+  </section>
+
+  <!-- I2C: 1 set the bus up, 2 scan it, 3 talk to a device -->
+  <section class="pane" id="p-i2c" role="tabpanel">
+    <div class="steps">
+      <div class="steps-top">
+      <div class="card">
+        <h3><span class="stepn">1</span>Bus<select id="i-bus" aria-label="Bus"></select><span class="sp"></span><span class="hint" id="i-applied"></span></h3>
+        <div class="row">
+          <label class="f">Clock<select id="i-clock"><option value="100000" selected>100 kHz (standard)</option><option value="400000">400 kHz (fast)</option><option value="1000000">1 MHz (fast plus)</option></select></label>
+          <label class="f chk"><input type="checkbox" id="i-stretch"> Clock stretching</label>
+        </div>
+      </div>
+      <div class="card">
+        <h3><span class="stepn">2</span>Scan<span class="sp"></span><button class="btn pri" id="i-scan"><svg class="i"><use href="#ic-scan"/></svg>Scan</button></h3>
+        <div class="addr" id="i-addr"></div>
+        <span class="hint" id="i-found">Look for devices on the bus. Click one that answers to use it below.</span>
+      </div>
+      </div>
+      <div class="card">
+        <h3><span class="stepn">3</span>Device<span class="hexin">0x<input class="in mono" id="i-a" value="" size="3" aria-label="Device address (hex)"></span><span class="hint" id="i-adec"></span></h3>
+        <div class="seg seg3" id="i-mode" role="group" aria-label="Operation">
+          <button data-m="read" aria-pressed="true">Read register</button><button data-m="write" aria-pressed="false">Write register</button><button data-m="raw" aria-pressed="false">Raw</button>
+        </div>
+        <div class="row">
+          <label class="f" data-for="read write">Register<span class="hexin">0x<input class="in mono" id="i-reg" value="00" size="3"></span></label>
+          <label class="f" data-for="read">Bytes to read<input class="in" id="i-n" type="number" min="1" max="256" value="1" style="width:90px"></label>
+          <label class="f grow" data-for="write">Value(s) (hex)<input class="in mono" id="i-val" placeholder="e.g. FF or 01 02"></label>
+          <label class="f grow" data-for="raw">Write (hex)<input class="in mono" id="i-w" placeholder="bytes to send, empty to only read"></label>
+          <label class="f" data-for="raw">Read bytes<input class="in" id="i-rn" type="number" min="0" max="256" value="0" style="width:90px"></label>
+          <button class="btn pri" id="i-run">Read</button>
+        </div>
+        <div class="console short" id="i-log" aria-live="polite"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SPI: 1 the device and its settings, 2 transfers -->
+  <section class="pane" id="p-spi" role="tabpanel">
+    <div class="steps">
+      <div class="card">
+        <h3><span class="stepn">1</span>Device<select id="s-dev" aria-label="Device"></select><span class="sp"></span><span class="hint" id="s-applied"></span></h3>
+        <div class="row">
+          <label class="f">Mode<select id="s-mode"><option value="0">0 · CPOL 0, CPHA 0</option><option value="1">1 · CPOL 0, CPHA 1</option><option value="2">2 · CPOL 1, CPHA 0</option><option value="3">3 · CPOL 1, CPHA 1</option></select></label>
+          <label class="f">Speed<select id="s-speed"><option value="100000">100 kHz</option><option value="500000">500 kHz</option><option value="1000000" selected>1 MHz</option><option value="4000000">4 MHz</option><option value="8000000">8 MHz</option><option value="16000000">16 MHz</option></select></label>
+          <label class="f">Bits<input class="in" id="s-bits" type="number" min="1" max="32" value="8" style="width:70px"></label>
+          <label class="f">Order<select id="s-lsb"><option value="false">MSB first</option><option value="true">LSB first</option></select></label>
+        </div>
+      </div>
+      <div class="card">
+        <h3><span class="stepn">2</span>Transfer</h3>
+        <div class="row">
+          <label class="f grow">Send (hex)<input class="in mono" id="s-w" placeholder="command and data, e.g. 9F"></label>
+          <label class="f">+ read (bytes)<input class="in" id="s-n" type="number" min="0" max="4096" value="0" style="width:90px"></label>
+          <button class="btn pri" id="s-run">Send</button>
+        </div>
+        <span class="hint">Every byte sent brings one back. "+ read" sends that many extra 00 bytes to clock out the answer.</span>
+        <div class="console short" id="s-log" aria-live="polite"></div>
+      </div>
+    </div>
+  </section>
 </div>
-
-<div class="tabs-container">
-    <div class="tabs-header">
-        <button class="tab-button active" onclick="switchTab('ioflow', 'gpio', this)">
-            <i class="fas fa-plug"></i> GPIO
-        </button>
-        <button class="tab-button" onclick="switchTab('ioflow', 'pwm', this)">
-            <i class="fas fa-wave-square"></i> PWM
-        </button>
-        <button class="tab-button" onclick="switchTab('ioflow', 'uart', this)">
-            <i class="fas fa-exchange-alt"></i> UART
-        </button>
-        <button class="tab-button" onclick="switchTab('ioflow', 'i2c', this)">
-            <i class="fas fa-project-diagram"></i> I2C
-        </button>
-        <button class="tab-button" onclick="switchTab('ioflow', 'spi', this)">
-            <i class="fas fa-stream"></i> SPI
-        </button>
-    </div>
-
-    <div class="tabs-content">
-        <!-- Tab GPIO -->
-        <div id="tab-ioflow-gpio" class="tab-pane active">
-            <section class="card">
-                <div class="card-header">
-                    <h2><i class="fas fa-plug"></i> GPIO Pins</h2>
-                </div>
-                <div class="card-body">
-                    <p class="gpio-table-meta">
-                        <i class="fas fa-sync-alt" aria-hidden="true"></i>
-                        Table refreshes every second. Use toggles to change direction or level.
-                    </p>
-                    <div class="table-wrap" style="overflow-x: auto;">
-                        <table class="gpio-pins-table" id="gpio-pins-table">
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Direction</th>
-                                    <th>Level</th>
-                                </tr>
-                            </thead>
-                            <tbody id="gpio-pins-tbody">
-                                <tr><td colspan="3" class="loading">Loading pins…</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </section>
-        </div>
-
-        <!-- Tab PWM -->
-        <div id="tab-ioflow-pwm" class="tab-pane">
-            <section class="card">
-                <div class="card-header">
-                    <h2><i class="fas fa-wave-square"></i> PWM Pins</h2>
-                </div>
-                <div class="card-body">
-                    <div class="form-group" style="margin-bottom: var(--spacing-md);">
-                        <label><i class="fas fa-list"></i> Select Pin</label>
-                        <select id="pwm-pin-select" onchange="onPwmPinSelected()">
-                            <option value="">-- Select a PWM pin --</option>
-                        </select>
-                    </div>
-                    <div id="pwm-pin-details" style="display:none;">
-                        <div class="toggle-item" style="margin-bottom:var(--spacing-md);">
-                            <div class="toggle-item-info">
-                                <i class="fas fa-power-off" id="pwm-status-icon" style="color:var(--text-muted);"></i>
-                                <div>
-                                    <div class="toggle-item-label">Status</div>
-                                    <div class="toggle-item-desc" id="pwm-status-label">Inactive</div>
-                                </div>
-                            </div>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="pwm-status-toggle" onchange="onPwmToggleChanged(this)">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <div style="margin-top:var(--spacing-md);">
-                            <div class="form-group" style="margin-bottom: var(--spacing-sm);">
-                                <label><i class="fas fa-tachometer-alt"></i> Duty Cycle</label>
-                                <div class="range-with-input">
-                                    <input type="range" id="pwm-set-duty-range" min="0" max="100" step="5" value="50"
-                                        oninput="syncDutyFromRange(this.value)">
-                                    <input type="number" id="pwm-set-duty" min="0" max="100" step="1" value="50"
-                                        oninput="syncDutyFromInput(this.value)">
-                                    <span class="range-unit">%</span>
-                                </div>
-                            </div>
-                            <div class="form-group" style="margin-bottom: var(--spacing-md);">
-                                <label><i class="fas fa-wave-square"></i> Frequency</label>
-                                <div class="range-with-input">
-                                    <input type="range" id="pwm-set-freq-range" min="0" max="100000" step="5" value="1000"
-                                        oninput="syncFreqFromRange(this.value)">
-                                    <input type="number" id="pwm-set-freq" min="0" max="100000" step="1" value="1000"
-                                        oninput="syncFreqFromInput(this.value)">
-                                    <span class="range-unit">Hz</span>
-                                </div>
-                            </div>
-                            <button class="btn btn-primary btn-sm" onclick="setSelectedPwm()">
-                                <i class="fas fa-check"></i> Apply PWM
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </section>
-        </div>
-
-        <!-- Tab UART -->
-        <div id="tab-ioflow-uart" class="tab-pane">
-            <section class="card">
-                <div class="card-header">
-                    <h2><i class="fas fa-exchange-alt"></i> UART Serial Ports</h2>
-                </div>
-                <div class="card-body">
-                    <div id="uart-config-section">
-                        <div class="uart-config-inline" id="uart-config-grid">
-                            <div class="uart-config-item">
-                                <label for="uart-port-select"><i class="fas fa-list"></i> Port</label>
-                                <select id="uart-port-select" class="uart-select" onchange="onUartPortSelected()">
-                                    <option value="">-- Select port --</option>
-                                </select>
-                            </div>
-                            <div class="uart-config-item">
-                                <label for="uart-baudrate"><i class="fas fa-tachometer-alt"></i> Baud</label>
-                                <select id="uart-baudrate" class="uart-select">
-                                    <option value="9600">9600</option>
-                                    <option value="19200">19200</option>
-                                    <option value="38400">38400</option>
-                                    <option value="57600">57600</option>
-                                    <option value="115200" selected>115200</option>
-                                    <option value="230400">230400</option>
-                                    <option value="460800">460800</option>
-                                    <option value="921600">921600</option>
-                                </select>
-                            </div>
-                            <div class="uart-config-item">
-                                <label for="uart-data-bits"><i class="fas fa-sort-numeric-down"></i> Data</label>
-                                <select id="uart-data-bits" class="uart-select">
-                                    <option value="5">5</option>
-                                    <option value="6">6</option>
-                                    <option value="7">7</option>
-                                    <option value="8" selected>8</option>
-                                </select>
-                            </div>
-                            <div class="uart-config-item">
-                                <label for="uart-parity"><i class="fas fa-check-double"></i> Parity</label>
-                                <select id="uart-parity" class="uart-select">
-                                    <option value="none" selected>None</option>
-                                    <option value="even">Even</option>
-                                    <option value="odd">Odd</option>
-                                </select>
-                            </div>
-                            <div class="uart-config-item">
-                                <label for="uart-stop-bits"><i class="fas fa-stop-circle"></i> Stop</label>
-                                <select id="uart-stop-bits" class="uart-select">
-                                    <option value="1" selected>1</option>
-                                    <option value="2">2</option>
-                                </select>
-                            </div>
-                            <div class="uart-config-item">
-                                <label for="uart-flow"><i class="fas fa-exchange-alt"></i> Flow</label>
-                                <select id="uart-flow" class="uart-select">
-                                    <option value="none" selected>None</option>
-                                    <option value="rtscts">RTS/CTS</option>
-                                    <option value="xonxoff">XON/XOFF</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                    <div id="uart-port-details">
-                        <div class="toggle-item" style="margin-bottom: var(--spacing-md);">
-                            <div class="toggle-item-info">
-                                <i class="fas fa-plug" id="uart-status-icon" style="color: var(--text-muted);"></i>
-                                <div>
-                                    <div class="toggle-item-label">Status</div>
-                                    <div class="toggle-item-desc" id="uart-status-label">Closed</div>
-                                </div>
-                            </div>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="uart-status-toggle" onchange="onUartToggleChanged(this)">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <div id="uart-io-section" style="display:none;">
-                            <div class="form-group" style="margin-bottom: var(--spacing-md);">
-                                <label for="uart-write-data"><i class="fas fa-paper-plane"></i> Send Data</label>
-                                <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-                                    <select id="uart-tx-mode" class="uart-select" style="min-width: 90px;" title="Text = characters, Hex = raw bytes" onchange="uartUpdateTxPlaceholder()">
-                                        <option value="text" selected>Text</option>
-                                        <option value="hex">Hex</option>
-                                    </select>
-                                    <select id="uart-tx-line-ending" class="uart-select" style="min-width: 108px;" title="Text mode only: append bytes after the field. In Hex, use 0D 0A in the field itself.">
-                                        <option value="none" selected>None</option>
-                                        <option value="lf">LF</option>
-                                        <option value="cr">CR</option>
-                                        <option value="crlf">CRLF</option>
-                                    </select>
-                                    <input type="text" id="uart-write-data" placeholder="Enter text to send..." class="form-control" style="flex:1; min-width: 120px;">
-                                    <button class="btn btn-primary btn-sm" onclick="uartWrite()" style="white-space:nowrap;">
-                                        <i class="fas fa-paper-plane"></i> Send
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0; margin-top: var(--spacing-md);">
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--spacing-sm); flex-wrap: wrap; gap: var(--spacing-sm);">
-                            <label style="margin: 0;"><i class="fas fa-terminal"></i> Log</label>
-                            <div style="display: flex; align-items: center; gap: var(--spacing-sm); flex-wrap: wrap;">
-                                <select id="uart-log-mode" class="uart-select" style="min-width: 90px; font-size: 0.8rem;" title="Text = characters, Hex = raw bytes">
-                                    <option value="text" selected>Text</option>
-                                    <option value="hex">Hex</option>
-                                </select>
-                                <label for="uart-hide-echo" style="display: flex; align-items: center; gap: 6px; margin: 0; font-size: 0.8rem; white-space: nowrap;" title="Drop a line that repeats what was just sent, when it comes straight back">
-                                    <input type="checkbox" id="uart-hide-echo" checked> Hide echo
-                                </label>
-                                <button class="btn btn-sm" onclick="uartExportLog()" title="Export log">
-                                    <i class="fas fa-download"></i>
-                                </button>
-                                <button class="btn btn-sm" onclick="uartClearLog()" title="Clear log">
-                                    <i class="fas fa-trash-alt"></i>
-                                </button>
-                            </div>
-                        </div>
-                        <div id="uart-log" style="font-family: var(--font-mono); font-size: 0.8rem; height: 1000px; overflow-y: auto; padding: var(--spacing-sm); background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-md);"></div>
-                    </div>
-
-                </div>
-            </section>
-        </div>
-
-        <!-- Tab I2C -->
-        <div id="tab-ioflow-i2c" class="tab-pane">
-            <section class="card">
-                <div class="card-header">
-                    <h2><i class="fas fa-project-diagram"></i> I2C Buses</h2>
-                </div>
-                <div class="card-body">
-                    <div id="i2c-config-section">
-                        <div class="uart-config-inline" id="i2c-config-grid" style="align-items: center;">
-                            <div class="uart-config-item">
-                                <label for="i2c-bus-select"><i class="fas fa-list"></i> Bus</label>
-                                <select id="i2c-bus-select" class="uart-select" onchange="onI2CBusSelected()">
-                                    <option value="">-- Select bus --</option>
-                                </select>
-                            </div>
-                            <div class="uart-config-item">
-                                <label for="i2c-clock-hz"><i class="fas fa-tachometer-alt"></i> Clock (Hz)</label>
-                                <select id="i2c-clock-hz" class="uart-select">
-                                    <option value="100000">100 kHz</option>
-                                    <option value="400000" selected>400 kHz</option>
-                                    <option value="1000000">1 MHz</option>
-                                </select>
-                            </div>
-                            <div class="uart-config-item">
-                                <label for="i2c-ten-bit"><i class="fas fa-hashtag"></i> 10-bit addr</label>
-                                <select id="i2c-ten-bit" class="uart-select">
-                                    <option value="false" selected>7-bit</option>
-                                    <option value="true">10-bit</option>
-                                </select>
-                            </div>
-                            <div class="uart-config-item">
-                                <label for="i2c-clock-stretch"><i class="fas fa-expand-arrows-alt"></i> Clock stretch</label>
-                                <select id="i2c-clock-stretch" class="uart-select">
-                                    <option value="true" selected>Yes</option>
-                                    <option value="false">No</option>
-                                </select>
-                            </div>
-                            <div class="uart-config-item">
-                                <label>&nbsp;</label>
-                                <button id="i2c-scan-btn" class="btn btn-primary btn-sm" onclick="i2cScanBus()">
-                                    <i class="fas fa-search"></i> Scan
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    <div id="i2c-bus-details">
-                        <div id="i2c-transfer-section" class="form-group" style="margin-bottom: var(--spacing-md); margin-top: var(--spacing-md);">
-                            <div class="uart-config-inline" style="flex-wrap: wrap; gap: 12px 20px; align-items: center;">
-                                <div class="uart-config-item">
-                                    <label for="i2c-address"><i class="fas fa-hashtag"></i> Address</label>
-                                    <input type="text" id="i2c-address" placeholder="0x48" class="form-control" style="max-width: 90px;">
-                                </div>
-                                <div class="uart-config-item" style="flex: 1; min-width: 140px;">
-                                    <label for="i2c-write-data"><i class="fas fa-paper-plane"></i> Write Data</label>
-                                    <input type="text" id="i2c-write-data" placeholder="00 01 02 or 0x000102" class="form-control" style="min-width: 140px;">
-                                </div>
-                                <div class="uart-config-item">
-                                    <label for="i2c-read-length"><i class="fas fa-arrow-down"></i> Read length</label>
-                                    <input type="number" id="i2c-read-length" placeholder="0" min="0" class="form-control" style="max-width: 70px;" value="0">
-                                </div>
-                                <div class="uart-config-item" style="align-self: center;">
-                                    <label>&nbsp;</label>
-                                    <button class="btn btn-primary btn-sm" onclick="i2cTransfer()" style="white-space: nowrap;">
-                                        <i class="fas fa-paper-plane"></i> Send
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0; margin-top: var(--spacing-md);">
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--spacing-sm);">
-                            <label style="margin: 0;"><i class="fas fa-terminal"></i> Log</label>
-                            <div style="display: flex; align-items: center; gap: var(--spacing-sm);">
-                                <button class="btn btn-sm" onclick="i2cExportLog()" title="Export log">
-                                    <i class="fas fa-download"></i>
-                                </button>
-                                <button class="btn btn-sm" onclick="i2cClearLog()" title="Clear log">
-                                    <i class="fas fa-trash-alt"></i>
-                                </button>
-                            </div>
-                        </div>
-                        <div id="i2c-log" style="font-family: var(--font-mono); font-size: 0.8rem; height: 1000px; overflow-y: auto; padding: var(--spacing-sm); background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-md);"></div>
-                    </div>
-                </div>
-            </section>
-        </div>
-
-        <!-- Tab SPI -->
-        <div id="tab-ioflow-spi" class="tab-pane">
-            <section class="card">
-                <div class="card-header">
-                    <h2><i class="fas fa-stream"></i> SPI Devices</h2>
-                </div>
-                <div class="card-body">
-                    <div id="spi-config-section">
-                        <div class="uart-config-inline" id="spi-config-grid" style="flex-wrap: wrap; gap: 12px 20px; align-items: flex-end;">
-                            <div class="uart-config-item">
-                                <label for="spi-device-select"><i class="fas fa-list"></i> Device</label>
-                                <select id="spi-device-select" class="uart-select" onchange="onSpiDeviceSelected()">
-                                    <option value="">-- Select device --</option>
-                                </select>
-                            </div>
-                            <div class="uart-config-item">
-                                <label for="spi-max-speed-hz"><i class="fas fa-tachometer-alt"></i> Speed (Hz)</label>
-                                <div style="display: flex; gap: 6px; align-items: center; flex-wrap: nowrap;">
-                                    <input type="text" inputmode="numeric" id="spi-max-speed-hz" value="10000000" class="form-control" style="width: 92px; max-width: 92px; flex-shrink: 0;" placeholder="Hz" title="Clock in Hz (editable)" autocomplete="off" spellcheck="false">
-                                    <select id="spi-speed-preset" class="uart-select" style="min-width: 100px; max-width: 130px;" onchange="onSpiSpeedPresetChange()" title="Preset fills the speed field">
-                                        <option value="">Preset...</option>
-                                        <option value="1000">1 kHz</option>
-                                        <option value="10000">10 kHz</option>
-                                        <option value="100000">100 kHz</option>
-                                        <option value="500000">500 kHz</option>
-                                        <option value="1000000">1 MHz</option>
-                                        <option value="5000000">5 MHz</option>
-                                        <option value="10000000">10 MHz</option>
-                                        <option value="20000000">20 MHz</option>
-                                        <option value="50000000">50 MHz</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="uart-config-item">
-                                <label for="spi-bits"><i class="fas fa-microchip"></i> Bits</label>
-                                <select id="spi-bits" class="uart-select">
-                                    <option value="8" selected>8</option>
-                                    <option value="16">16</option>
-                                </select>
-                            </div>
-                            <div class="uart-config-item">
-                                <label for="spi-lsb-first"><i class="fas fa-exchange-alt"></i> LSB first</label>
-                                <select id="spi-lsb-first" class="uart-select">
-                                    <option value="false" selected>MSB</option>
-                                    <option value="true">LSB</option>
-                                </select>
-                            </div>
-                            <div class="uart-config-item">
-                                <label for="spi-mode"><i class="fas fa-sliders-h"></i> Mode</label>
-                                <select id="spi-mode" class="uart-select">
-                                    <option value="0" selected>0</option>
-                                    <option value="1">1</option>
-                                    <option value="2">2</option>
-                                    <option value="3">3</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                    <div id="spi-device-details">
-                        <div id="spi-transfer-section" class="form-group" style="margin-bottom: var(--spacing-md);">
-                            <div class="uart-config-inline" style="flex-wrap: wrap; gap: 12px 20px; align-items: center;">
-                                <div class="uart-config-item" style="flex: 1; min-width: 140px;">
-                                    <label for="spi-write-data"><i class="fas fa-paper-plane"></i> Write Data</label>
-                                    <input type="text" id="spi-write-data" placeholder="00 01 02 or 0x000102" class="form-control" style="min-width: 140px;">
-                                </div>
-                                <div class="uart-config-item">
-                                    <label for="spi-read-length"><i class="fas fa-arrow-down"></i> Read length</label>
-                                    <input type="number" id="spi-read-length" placeholder="0" min="0" class="form-control" style="max-width: 70px;" value="0">
-                                </div>
-                                <div class="uart-config-item" style="align-self: center;">
-                                    <label>&nbsp;</label>
-                                    <button class="btn btn-primary btn-sm" onclick="spiTransfer()" style="white-space: nowrap;">
-                                        <i class="fas fa-paper-plane"></i> Send
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0; margin-top: var(--spacing-md);">
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--spacing-sm);">
-                            <label style="margin: 0;"><i class="fas fa-terminal"></i> Log</label>
-                            <div style="display: flex; align-items: center; gap: var(--spacing-sm);">
-                                <button class="btn btn-sm" onclick="spiExportLog()" title="Export log">
-                                    <i class="fas fa-download"></i>
-                                </button>
-                                <button class="btn btn-sm" onclick="spiClearLog()" title="Clear log">
-                                    <i class="fas fa-trash-alt"></i>
-                                </button>
-                            </div>
-                        </div>
-                        <div id="spi-log" style="font-family: var(--font-mono); font-size: 0.8rem; height: 1000px; overflow-y: auto; padding: var(--spacing-sm); background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-md);"></div>
-                    </div>
-                </div>
-            </section>
-        </div>
-    </div>
-</div>
+<div class="toast" id="toast" role="status" hidden></div>
 {{end}}
